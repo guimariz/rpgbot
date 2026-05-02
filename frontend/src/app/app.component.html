@@ -99,12 +99,15 @@
       </section>
 
       <section class="campaign-list">
-        <h2>Campanhas existentes</h2>
+        <h2>Campanhas Existentes</h2>
         @for (campaign of campaigns(); track campaign.id) {
-          <button class="campaign-card" type="button" (click)="selectCampaign(campaign)">
-            <strong>{{ campaign.name }}</strong>
-            <small>{{ campaign.systemKey }} · {{ campaign.phase }}</small>
-          </button>
+          <article class="campaign-card">
+            <button class="campaign-card-main" type="button" (click)="selectCampaign(campaign)">
+              <strong>{{ campaign.name }}</strong>
+              <small>{{ campaign.systemKey }} · {{ campaign.phase }}</small>
+            </button>
+            <button class="danger-button compact-button" type="button" [disabled]="isLoading()" (click)="deleteCampaign(campaign, $event)">Excluir</button>
+          </article>
         } @empty {
           <p class="muted">Nenhuma campanha criada ainda.</p>
         }
@@ -225,6 +228,7 @@
                 <option value="NPC">NPC</option>
                 <option value="Enemy">Inimigo</option>
                 <option value="Object">Objeto</option>
+                <option value="Ability">Habilidade</option>
               </select>
             </label>
           </div>
@@ -250,6 +254,9 @@
               </label>
             }
             <button class="ghost-button" type="button" [disabled]="isPresetLocked()" (click)="addTemplateField()">Adicionar campo</button>
+            @if (isPresetLocked()) {
+              <small class="muted">Os templates do sistema {{ settingsDraft().system }} sao predefinidos e nao podem ser editados.</small>
+            }
           </div>
           <div class="chip-list">
             @for (field of draftTemplateFields(); track field.id) {
@@ -298,13 +305,279 @@
         @if (configStep() < 5) {
           <button class="apply-button inline" type="button" (click)="nextConfigStep()">Proximo</button>
         } @else {
-          <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="finishCampaignConfiguration()">Entrar no dashboard</button>
+          <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="finishCampaignConfiguration()">Entrar na sessao</button>
         }
       </footer>
     </section>
   </main>
+} @else if (isSessionConfigMode()) {
+  <main class="session-config-page">
+    <header class="session-config-topbar">
+      <div>
+        <p class="eyebrow">Configurar Sessão</p>
+        <h1>{{ selectedSessionConfig()?.name || 'Sessao' }}</h1>
+        <small>{{ campaignName() }}</small>
+      </div>
+      <div class="session-actions">
+        <button type="button" [disabled]="isLoading()" (click)="saveSessionConfiguration()">Salvar</button>
+      </div>
+    </header>
+
+    @if (campaignMessage()) {
+      <p class="message error">{{ campaignMessage() }}</p>
+    }
+
+    <section class="session-config-layout">
+      <section class="panel session-config-section">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Fichas</p>
+            <h2>Adicionar fichas a sessao</h2>
+          </div>
+        </div>
+
+        <div class="session-type-grid">
+          <section>
+            <strong>Fichas de Jogadores</strong>
+            @for (entity of entities(); track entity.id) {
+              @if (entity.type === 'PC') {
+                <label class="check-card">
+                  <input type="checkbox" [checked]="isSessionEntitySelected(entity.id)" (change)="toggleSessionEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              }
+            }
+          </section>
+          <section>
+            <strong>Fichas de NPC</strong>
+            @for (entity of entities(); track entity.id) {
+              @if (entity.type === 'NPC') {
+                <label class="check-card">
+                  <input type="checkbox" [checked]="isSessionEntitySelected(entity.id)" (change)="toggleSessionEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              }
+            }
+          </section>
+          <section>
+            <strong>Fichas de Inimigos</strong>
+            @for (entity of entities(); track entity.id) {
+              @if (entity.type === 'Enemy') {
+                <label class="check-card">
+                  <input type="checkbox" [checked]="isSessionEntitySelected(entity.id)" (change)="toggleSessionEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              }
+            }
+          </section>
+          <section>
+            <strong>Fichas de Objetos</strong>
+            @for (entity of entities(); track entity.id) {
+              @if (entity.type === 'Object') {
+                <label class="check-card">
+                  <input type="checkbox" [checked]="isSessionEntitySelected(entity.id)" (change)="toggleSessionEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              }
+            }
+          </section>
+        </div>
+      </section>
+
+      <section class="panel session-config-section">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Lore</p>
+            <h2>Adicionar cards da Lore</h2>
+          </div>
+        </div>
+
+        <div class="session-lore-grid">
+          @for (node of selectedCampaign()?.settings?.loreNodes ?? []; track node.id) {
+            <label class="check-card lore">
+              <input type="checkbox" [checked]="isSessionLoreSelected(node.id)" (change)="toggleSessionLore(node.id, $any($event.target).checked)">
+              <span>
+                <strong>{{ node.title }}</strong>
+                <small>{{ node.text || 'Sem descricao.' }}</small>
+              </span>
+            </label>
+          } @empty {
+            <p class="muted">Crie cards na area de Lore da campanha para vincular aqui.</p>
+          }
+        </div>
+      </section>
+
+      <section class="panel session-config-section wide">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Encontros</p>
+            <h2>Adicionar encontro</h2>
+          </div>
+        </div>
+
+        <div class="session-form">
+          @if (editingEncounterId()) {
+            <div class="editing-banner">
+              <strong>Editando encontro</strong>
+              <button type="button" (click)="cancelEncounterEdit()">Cancelar</button>
+            </div>
+          }
+          <div class="form-grid">
+            <label>
+              Nome do encontro
+              <input type="text" [value]="draftEncounterName()" (input)="setDraftEncounterName($any($event.target).value)">
+            </label>
+            <label>
+              Notas
+              <input type="text" [value]="draftEncounterNotes()" (input)="setDraftEncounterNotes($any($event.target).value)">
+            </label>
+          </div>
+
+          <div class="board-size-row">
+            <label>
+              Largura do board
+              <input type="number" min="1" max="30" [value]="draftEncounterBoardWidth()" (input)="setDraftEncounterBoardWidth($any($event.target).value)">
+            </label>
+            <label>
+              Altura do board
+              <input type="number" min="1" max="30" [value]="draftEncounterBoardHeight()" (input)="setDraftEncounterBoardHeight($any($event.target).value)">
+            </label>
+            <label>
+              Visibilidade do board
+              <select [value]="draftEncounterBoardVisibility()" (change)="setDraftEncounterBoardVisibility($any($event.target).value)">
+                <option value="gmOnly">Apenas GM</option>
+                <option value="public">Publico</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="encounter-picker-groups session-encounter-picker">
+            <section>
+              <strong>Jogadores</strong>
+              @for (entity of sessionEncounterEntitiesByType('PC'); track entity.id) {
+                <label class="encounter-chip" [class.selected]="isDraftEncounterEntitySelected(entity.id)">
+                  <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              } @empty {
+                <small class="muted">Nenhuma ficha de jogador na sessao.</small>
+              }
+            </section>
+            <section>
+              <strong>NPCs</strong>
+              @for (entity of sessionEncounterEntitiesByType('NPC'); track entity.id) {
+                <label class="encounter-chip" [class.selected]="isDraftEncounterEntitySelected(entity.id)">
+                  <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              } @empty {
+                <small class="muted">Nenhum NPC na sessao.</small>
+              }
+            </section>
+            <section>
+              <strong>Inimigos</strong>
+              @for (entity of sessionEncounterEntitiesByType('Enemy'); track entity.id) {
+                <label class="encounter-chip" [class.selected]="isDraftEncounterEntitySelected(entity.id)">
+                  <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              } @empty {
+                <small class="muted">Nenhum inimigo na sessao.</small>
+              }
+            </section>
+            <section>
+              <strong>Objetos</strong>
+              @for (entity of sessionEncounterEntitiesByType('Object'); track entity.id) {
+                <label class="encounter-chip" [class.selected]="isDraftEncounterEntitySelected(entity.id)">
+                  <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                  <span>{{ entity.baseState.name }}</span>
+                </label>
+              } @empty {
+                <small class="muted">Nenhum objeto na sessao.</small>
+              }
+            </section>
+          </div>
+
+          <section class="round-counter-builder">
+            <div>
+              <p class="eyebrow">Contadores de round</p>
+              <h3>Eventos temporizados</h3>
+            </div>
+            <div class="round-counter-row">
+              <label>
+                Nome
+                <input type="text" [value]="draftRoundCounterName()" placeholder="Ex: reforcos chegam" (input)="setDraftRoundCounterName($any($event.target).value)">
+              </label>
+              <label>
+                Rounds
+                <input type="number" min="1" [value]="draftRoundCounterRounds()" (input)="setDraftRoundCounterRounds($any($event.target).value)">
+              </label>
+              <label>
+                Visibilidade
+                <select [value]="draftRoundCounterVisibility()" (change)="setDraftRoundCounterVisibility($any($event.target).value)">
+                  <option value="gmOnly">Apenas GM</option>
+                  <option value="public">Publico</option>
+                </select>
+              </label>
+              <button class="ghost-button" type="button" (click)="addDraftRoundCounter()">Adicionar</button>
+            </div>
+            <div class="chip-list">
+              @for (counter of draftRoundCounters(); track counter.id) {
+                <span class="config-chip">{{ counter.name }} · {{ counter.rounds }} round(s) · {{ counter.visibility === 'public' ? 'Publico' : 'GM' }} <button type="button" (click)="removeDraftRoundCounter(counter.id)">x</button></span>
+              } @empty {
+                <span class="muted">Nenhum contador definido.</span>
+              }
+            </div>
+          </section>
+
+          <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="addEncounter()">
+            {{ editingEncounterId() ? 'Salvar encontro' : 'Adicionar encontro' }}
+          </button>
+        </div>
+
+        <div class="config-list compact encounter-config-list">
+          @for (encounter of selectedSessionConfig()?.encounters ?? []; track encounter.id) {
+            <article>
+              <strong>{{ encounter.name }}</strong>
+              <small>{{ encounterEntityNames(encounter) || 'Sem fichas' }}</small>
+              <small>Board {{ encounter.board?.width || 8 }}x{{ encounter.board?.height || 6 }} · {{ encounter.board?.visibility === 'public' ? 'Publico' : 'Apenas GM' }}</small>
+              <small>{{ (encounter.roundCounters?.length || 0) }} contador(es) de round</small>
+              <button type="button" [disabled]="isLoading()" (click)="editEncounter(encounter)">Editar</button>
+              <button type="button" [disabled]="isLoading()" (click)="removeEncounter(encounter.id)">Remover</button>
+            </article>
+          } @empty {
+            <p class="muted">Adicione encontros quando a sessao estiver pronta.</p>
+          }
+        </div>
+      </section>
+
+      <section class="panel session-config-section">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Lobby</p>
+            <h2>Definir senha</h2>
+          </div>
+        </div>
+        <div class="form-grid single">
+          <label>
+            Senha do lobby
+            <input type="password" [value]="lobbyPasswordDraft()" placeholder="Senha para os jogadores" (input)="setLobbyPasswordDraft($any($event.target).value)">
+          </label>
+          <label>
+            Maximo de jogadores
+            <input type="number" min="1" max="100" [value]="lobbyMaxParticipantsDraft()" (input)="setLobbyMaxParticipantsDraft($any($event.target).value)">
+          </label>
+        </div>
+        <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="saveLobbySettings()">Salvar senha do lobby</button>
+        @if (savedLobbyPassword()) {
+          <p class="saved-lobby-password">Senha salva para o mestre: <strong>{{ savedLobbyPassword() }}</strong></p>
+        }
+        <p class="muted">{{ lobbySettings()?.hasPassword ? 'Senha configurada para esta campanha.' : 'Defina uma senha antes de iniciar o lobby.' }}</p>
+      </section>
+    </section>
+  </main>
 } @else {
-  <main class="shell">
+  <main class="shell" [class.gm-lobby-shell]="isGmLobbyMode()">
     <aside class="sidebar" aria-label="Menu do mestre">
       <div class="brand">
         <span class="brand-mark">R</span>
@@ -315,11 +588,8 @@
       </div>
 
       <nav class="nav-list">
-        <button class="nav-item" [class.active]="workspaceView() === 'dashboard'" type="button" (click)="setWorkspaceView('dashboard')">Dashboard</button>
-        <button class="nav-item" type="button">Biblioteca de Fichas</button>
-        <button class="nav-item" type="button">Planejamento</button>
-        <button class="nav-item" type="button">Batalhas</button>
-        <button class="nav-item" type="button">Lobby</button>
+        <button class="nav-item" [class.active]="workspaceView() === 'dashboard'" type="button" (click)="setWorkspaceView('dashboard')">Campanha</button>
+        <button class="nav-item" [class.active]="workspaceView() === 'library'" type="button" (click)="setWorkspaceView('library')">Biblioteca de Fichas</button>
         <button class="nav-item" [class.active]="workspaceView() === 'lore'" type="button" (click)="setWorkspaceView('lore')">Lore</button>
       </nav>
 
@@ -330,335 +600,364 @@
     <section class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Campanha ativa</p>
+          <p class="eyebrow">{{ isGmLobbyMode() ? 'Lobby do GM' : 'Campanha' }}</p>
           <h1>{{ campaignName() }}</h1>
         </div>
-        <div class="session-actions" aria-label="Controles da sessao">
-          <button type="button" [class.primary]="phase() === 'session'" (click)="setPhase('session')">Iniciar sessao</button>
-          <button type="button" [class.primary]="phase() === 'combat'" (click)="setPhase('combat')">Iniciar combate</button>
-          <button type="button" [class.primary]="phase() === 'paused'" (click)="setPhase('paused')">Pausar</button>
-        </div>
+        @if (isGmLobbyMode()) {
+          <div class="session-actions" aria-label="Controles da sessao">
+            <button type="button" [class.primary]="phase() === 'paused'" [disabled]="isLoading() || phase() === 'planning'" (click)="pauseSession()">Encerrar sessao</button>
+          </div>
+        }
       </header>
 
       @if (campaignMessage()) {
         <p class="message error">{{ campaignMessage() }}</p>
       }
 
-      <section class="status-strip" aria-label="Resumo">
-        <div>
-          <small>Fase</small>
-          <strong>{{ phase() }}</strong>
-        </div>
-        <div>
-          <small>Combate preparado</small>
-          <strong>{{ activeCombatName() || 'Nao configurado' }}</strong>
-        </div>
-        <div>
-          <small>Fichas na sessao</small>
-          <strong>{{ entities().length }}</strong>
-        </div>
-        <div>
-          <small>Visiveis no lobby</small>
-          <strong>{{ publicEntities().length }}</strong>
-        </div>
-      </section>
+      @if (isGmLobbyMode()) {
+        <section class="status-strip" aria-label="Resumo">
+          <div>
+            <small>Fase</small>
+            <strong>{{ phase() }}</strong>
+          </div>
+          <div>
+            <small>Combate preparado</small>
+            <strong>{{ activeCombatName() || 'Nao configurado' }}</strong>
+          </div>
+          <div>
+            <small>Fichas na sessao</small>
+            <strong>{{ entities().length }}</strong>
+          </div>
+          <div>
+            <small>Visiveis no lobby</small>
+            <strong>{{ publicEntities().length }}</strong>
+          </div>
+        </section>
+      }
 
       @if (workspaceView() === 'dashboard') {
-      <section class="main-grid">
-        <section class="panel compact-list" aria-label="Fichas envolvidas">
+      <section class="campaign-session-board">
+        <section class="panel session-directory" aria-label="Sessoes da campanha">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Planejamento</p>
-              <h2>Fichas do encontro</h2>
+              <p class="eyebrow">Campanha</p>
+              <h2>Sessões Configuradas</h2>
             </div>
-            <button class="icon-button" type="button" title="Adicionar ficha" (click)="startCreate()">+</button>
           </div>
 
-          <div class="entity-list">
-            @for (entity of entities(); track entity.id) {
-              <button
-                class="entity-row"
-                type="button"
-                [class.selected]="selectedEntity().id === entity.id"
-                (click)="selectEntity(entity.id)"
-              >
-                <img [src]="entity.baseState.imageUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=300&q=80'" [alt]="entity.baseState.name">
-                <span>
-                  <strong>{{ entity.baseState.name }}</strong>
-                  <small>{{ entity.type }} · {{ hpStateLabel(entity) }}</small>
-                </span>
-                <b>{{ entity.sessionState.currentHp }}</b>
-              </button>
+          <div class="session-create-row">
+            <label>
+              Nova sessao
+              <input type="text" [value]="draftSessionName()" (input)="setDraftSessionName($any($event.target).value)" placeholder="Nome Padrão: Sessão {{ campaignSessions().length + 1 }}">
+            </label>
+            <label>
+              Notas
+              <input type="text" [value]="draftSessionNotes()" (input)="setDraftSessionNotes($any($event.target).value)">
+            </label>
+            <button class="apply-button inline compact-create-button" type="button" [disabled]="isSavingSessionConfig()" (click)="addSessionConfig()">
+              {{ isSavingSessionConfig() ? 'Salvando...' : 'Criar Nova Sessão' }}
+            </button>
+          </div>
+
+          <div class="session-card-grid">
+            @for (session of campaignSessions(); track session.id) {
+              <article class="session-card" [class.selected]="selectedSessionConfigId() === session.id">
+                <button type="button" class="session-card-main" (click)="selectSessionConfig(session.id)">
+                  <strong>{{ session.name }}</strong>
+                  <small>{{ session.encounters.length }} encontro(s)</small>
+                  <span>{{ session.lastLobbySummary || 'Sem resumo do ultimo lobby.' }}</span>
+                </button>
+                <div class="session-card-actions">
+                  <button type="button" (click)="configureSession(session.id)">Configurar Sessão</button>
+                  <button type="button" [disabled]="isLoading()" (click)="startLobbyForSession(session.id)">Iniciar Lobby</button>
+                  <button type="button" class="danger-action" [disabled]="isLoading() || isSavingSessionConfig()" (click)="deleteSessionConfig(session.id, $event)">Excluir</button>
+                </div>
+              </article>
             } @empty {
-              <p class="muted">Crie a primeira ficha para esta campanha.</p>
+              <p class="muted">Crie uma sessao para montar encontros e abrir o lobby.</p>
             }
           </div>
         </section>
+      </section>
 
-        @if (sheetMode() === 'create') {
-          <section class="panel sheet" aria-label="Nova ficha">
+      @if (configuringSessionId() && !isGmLobbyMode()) {
+        <div class="combat-modal-backdrop" role="presentation" (click)="closeSessionConfig()">
+          <section class="session-config-modal" role="dialog" aria-modal="true" aria-label="Configurar sessão" (click)="$event.stopPropagation()">
+            <header>
+              <div>
+                <p class="eyebrow">Configurar Sessão</p>
+                <h2>Encontros{{ selectedSessionConfig() ? ' · ' + selectedSessionConfig()?.name : '' }}</h2>
+              </div>
+              <button type="button" aria-label="Fechar" (click)="closeSessionConfig()">x</button>
+            </header>
+
+            <section class="session-config-grid">
+              <section class="panel session-panel" aria-label="Configurar encontros da sessao">
+                <div class="session-form">
+                  @if (editingEncounterId()) {
+                    <div class="editing-banner">
+                      <strong>Editando encontro</strong>
+                      <button type="button" (click)="cancelEncounterEdit()">Cancelar</button>
+                    </div>
+                  }
+                  <label>
+                    Nome do encontro
+                    <input type="text" [value]="draftEncounterName()" (input)="setDraftEncounterName($any($event.target).value)">
+                  </label>
+                  <label>
+                    Notas
+                    <input type="text" [value]="draftEncounterNotes()" (input)="setDraftEncounterNotes($any($event.target).value)">
+                  </label>
+                  <div class="board-size-row">
+                    <label>
+                      Largura
+                      <input type="number" min="1" max="30" [value]="draftEncounterBoardWidth()" (input)="setDraftEncounterBoardWidth($any($event.target).value)">
+                    </label>
+                    <label>
+                      Altura
+                      <input type="number" min="1" max="30" [value]="draftEncounterBoardHeight()" (input)="setDraftEncounterBoardHeight($any($event.target).value)">
+                    </label>
+                    <label>
+                      Board
+                      <select [value]="draftEncounterBoardVisibility()" (change)="setDraftEncounterBoardVisibility($any($event.target).value)">
+                        <option value="gmOnly">Apenas GMs</option>
+                        <option value="public">Publico</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="encounter-picker-groups">
+                    <section>
+                      <strong>Personagens</strong>
+                      <div class="combat-entity-picker">
+                        @for (entity of encounterCombatEntitiesByType('PC'); track entity.id) {
+                          <label>
+                            <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                            <span>{{ entity.baseState.name }}</span>
+                          </label>
+                        } @empty {
+                          <small class="muted">Nenhum personagem.</small>
+                        }
+                      </div>
+                    </section>
+                    <section>
+                      <strong>NPCs</strong>
+                      <div class="combat-entity-picker">
+                        @for (entity of encounterCombatEntitiesByType('NPC'); track entity.id) {
+                          <label>
+                            <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                            <span>{{ entity.baseState.name }}</span>
+                          </label>
+                        } @empty {
+                          <small class="muted">Nenhum NPC.</small>
+                        }
+                      </div>
+                    </section>
+                    <section>
+                      <strong>Inimigos</strong>
+                      <div class="combat-entity-picker">
+                        @for (entity of encounterCombatEntitiesByType('Enemy'); track entity.id) {
+                          <label>
+                            <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                            <span>{{ entity.baseState.name }}</span>
+                          </label>
+                        } @empty {
+                          <small class="muted">Nenhum inimigo.</small>
+                        }
+                      </div>
+                    </section>
+                    <section>
+                      <strong>Objetos</strong>
+                      <div class="combat-entity-picker">
+                        @for (entity of encounterCombatEntitiesByType('Object'); track entity.id) {
+                          <label>
+                            <input type="checkbox" [checked]="isDraftEncounterEntitySelected(entity.id)" (change)="toggleDraftEncounterEntity(entity.id, $any($event.target).checked)">
+                            <span>{{ entity.baseState.name }}</span>
+                          </label>
+                        } @empty {
+                          <small class="muted">Nenhum objeto.</small>
+                        }
+                      </div>
+                    </section>
+                  </div>
+                @if (encounterSupportAbilities().length > 0) {
+                  <div class="ability-reference-list">
+                    <strong>Habilidades de referencia</strong>
+                    @for (ability of encounterSupportAbilities(); track ability.id) {
+                      <small>{{ ability.baseState.name }} · {{ abilitySummary(ability) }}</small>
+                    }
+                  </div>
+                }
+                  <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="addEncounter()">
+                    {{ editingEncounterId() ? 'Salvar encontro' : 'Adicionar encontro' }}
+                  </button>
+                </div>
+
+                <div class="config-list compact">
+                  @for (encounter of selectedSessionConfig()?.encounters ?? []; track encounter.id) {
+                    <article>
+                      <strong>{{ encounter.name }}</strong>
+                      <small>{{ encounter.notes || 'Sem notas' }}</small>
+                      <small>{{ encounterEntityNames(encounter) || 'Sem fichas' }}</small>
+                      <small>Board {{ encounter.board?.width || 8 }}x{{ encounter.board?.height || 6 }} · {{ encounter.board?.visibility === 'public' ? 'Publico' : 'Apenas GMs' }}</small>
+                      <button type="button" [disabled]="isLoading()" (click)="editEncounter(encounter)">Editar</button>
+                      <button type="button" [disabled]="isLoading()" (click)="removeEncounter(encounter.id)">Remover</button>
+                    </article>
+                  } @empty {
+                    <p class="muted">Adicione encontros quando a sessao estiver pronta.</p>
+                  }
+                </div>
+              </section>
+            </section>
+          </section>
+        </div>
+      }
+      @if (isGmLobbyMode()) {
+        <section class="gm-lobby-runner">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Execucao</p>
+                <h2>Lobby da Sessao{{ activeLobbySession() ? ' · ' + activeLobbySession()?.name : '' }}</h2>
+              </div>
+              <button class="apply-button inline" type="button" [disabled]="!activeLobbySession()" (click)="openLobbyModal()">Abrir Lobby</button>
+            </div>
+
+            @if (activeLobbySession(); as session) {
+              <div class="gm-lobby-summary-grid">
+                <article>
+                  <small>Encontros</small>
+                  <strong>{{ session.encounters.length }}</strong>
+                </article>
+                <article>
+                  <small>Jogadores conectados</small>
+                  <strong>{{ lobbyParticipants().length }}</strong>
+                </article>
+                <article>
+                  <small>Combate ativo</small>
+                  <strong>{{ activeCombatName() || 'Nenhum' }}</strong>
+                </article>
+              </div>
+
+              <div class="config-list compact">
+                @for (encounter of session.encounters; track encounter.id) {
+                  <article>
+                    <strong>{{ encounter.name }}</strong>
+                    <small>{{ encounterEntityNames(encounter) || 'Sem fichas' }}</small>
+                    <small>Board {{ encounter.board?.width || 8 }}x{{ encounter.board?.height || 6 }} · {{ encounter.board?.visibility === 'public' ? 'Publico' : 'Apenas GMs' }}</small>
+                  </article>
+                } @empty {
+                  <p class="muted">Esta sessao nao tem encontros configurados.</p>
+                }
+              </div>
+            } @else {
+              <p class="muted">Configure uma sessao antes de executar o lobby.</p>
+            }
+          </section>
+        </section>
+      }
+
+      } @else if (workspaceView() === 'library') {
+        <section class="library-grid">
+          <section class="panel compact-list" aria-label="Biblioteca de fichas">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">Biblioteca</p>
-                <h2>Nova ficha</h2>
+                <h2>Fichas</h2>
               </div>
+              <button class="icon-button" type="button" title="Adicionar ficha" (click)="startCreate()">+</button>
             </div>
 
-            <ng-container *ngTemplateOutlet="sheetForm"></ng-container>
+            <div class="library-filter-tabs" aria-label="Filtros da biblioteca">
+              <button type="button" [class.active]="libraryFilter() === 'all'" (click)="setLibraryFilter('all')">Todos <span>{{ libraryFilterCount('all') }}</span></button>
+              <button type="button" [class.active]="libraryFilter() === 'PC'" (click)="setLibraryFilter('PC')">Personagens <span>{{ libraryFilterCount('PC') }}</span></button>
+              <button type="button" [class.active]="libraryFilter() === 'NPC'" (click)="setLibraryFilter('NPC')">NPCs <span>{{ libraryFilterCount('NPC') }}</span></button>
+              <button type="button" [class.active]="libraryFilter() === 'Enemy'" (click)="setLibraryFilter('Enemy')">Inimigos <span>{{ libraryFilterCount('Enemy') }}</span></button>
+              <button type="button" [class.active]="libraryFilter() === 'Object'" (click)="setLibraryFilter('Object')">Objetos <span>{{ libraryFilterCount('Object') }}</span></button>
+              <button type="button" [class.active]="libraryFilter() === 'Ability'" (click)="setLibraryFilter('Ability')">Habilidades <span>{{ libraryFilterCount('Ability') }}</span></button>
+            </div>
+
+            <div class="entity-list">
+              @for (entity of filteredLibraryEntities(); track entity.id) {
+                <button class="entity-row" type="button" [class.selected]="selectedEntity().id === entity.id" (click)="selectEntity(entity.id)">
+                  <img [src]="entity.baseState.imageUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=300&q=80'" [alt]="entity.baseState.name">
+                  <span>
+                    <strong>{{ entity.baseState.name }}</strong>
+                    <small>{{ entityListMeta(entity) }}</small>
+                  </span>
+                  <b>{{ entityListBadge(entity) }}</b>
+                </button>
+              } @empty {
+                <p class="muted">Nenhuma ficha neste filtro.</p>
+              }
+            </div>
           </section>
-        } @else if (selectedEntity(); as entity) {
-          <section class="panel sheet" aria-label="Ficha selecionada">
-            @if (sheetMode() === 'edit') {
+
+          <section class="panel sheet" aria-label="Ficha da biblioteca">
+            @if (sheetMode() === 'create') {
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Biblioteca</p>
-                  <h2>Editar ficha</h2>
+                  <h2>Nova ficha</h2>
                 </div>
               </div>
-
-              <ng-container *ngTemplateOutlet="sheetForm; context: { entity: entity }"></ng-container>
-            } @else {
-              <div class="sheet-hero">
-                <img [src]="entity.baseState.imageUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=300&q=80'" [alt]="entity.baseState.name">
-                <div>
-                  <p class="eyebrow">{{ entity.type }}</p>
-                  <h2>{{ entity.baseState.name }}</h2>
-                  <p>{{ entity.baseState.publicNotes }}</p>
-                </div>
-                <div class="sheet-actions">
-                  <button class="ghost-button" type="button" (click)="startEdit(entity)">Editar</button>
-                  <button class="ghost-button" type="button" (click)="toggleVisible(entity)">
-                    {{ entity.sessionState.isVisibleToPlayers ? 'Ocultar do lobby' : 'Mostrar no lobby' }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="hp-block">
-                <div class="hp-topline">
-                  <strong>{{ entity.sessionState.currentHp }} / {{ entity.baseState.maxHp }} HP</strong>
-                  <span>{{ hpStateLabel(entity) }}</span>
-                </div>
-                <div class="hp-track">
-                  <span [style.width.%]="hpPercent(entity)"></span>
-                </div>
-              </div>
-
-              <div class="sheet-grid">
-                <div>
-                  <h3>Resistencias</h3>
-                  <div class="tag-row">
-                    @for (item of entity.baseState.resistances; track item) {
-                      <span class="tag">{{ damageLabel(item) }}</span>
-                    } @empty {
-                      <span class="muted">Nenhuma</span>
-                    }
-                  </div>
-                </div>
-                <div>
-                  <h3>Fraquezas</h3>
-                  <div class="tag-row">
-                    @for (item of entity.baseState.weaknesses; track item) {
-                      <span class="tag warning">{{ damageLabel(item) }}</span>
-                    } @empty {
-                      <span class="muted">Nenhuma</span>
-                    }
-                  </div>
-                </div>
-              </div>
-
-              <div class="private-note">
-                <h3>Notas privadas</h3>
-                <p>{{ entity.baseState.gmNotes || 'Nenhuma nota privada cadastrada.' }}</p>
-              </div>
-
-              <section class="hp-manager" aria-label="Painel de dano e cura">
-                <div class="panel-heading tight">
+              <ng-container *ngTemplateOutlet="sheetForm"></ng-container>
+            } @else if (selectedEntity(); as entity) {
+              @if (sheetMode() === 'edit') {
+                <div class="panel-heading">
                   <div>
-                    <p class="eyebrow">Botao Usar</p>
-                    <h3>Painel de execucao</h3>
+                    <p class="eyebrow">Biblioteca</p>
+                    <h2>Editar ficha</h2>
+                  </div>
+                </div>
+                <ng-container *ngTemplateOutlet="sheetForm; context: { entity: entity }"></ng-container>
+              } @else {
+                <div class="sheet-hero">
+                  <img [src]="entity.baseState.imageUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=300&q=80'" [alt]="entity.baseState.name">
+                  <div>
+                    <p class="eyebrow">{{ entity.type }}</p>
+                    <h2>{{ entity.baseState.name }}</h2>
+                    <p>{{ entity.baseState.publicNotes }}</p>
+                  </div>
+                  <div class="sheet-actions">
+                    <button class="ghost-button" type="button" (click)="startEdit(entity)">Editar</button>
+                    <button class="ghost-button" type="button" (click)="toggleVisible(entity)">
+                      {{ entity.sessionState.isVisibleToPlayers ? 'Ocultar do lobby' : 'Mostrar no lobby' }}
+                    </button>
                   </div>
                 </div>
 
-                <div class="segmented">
-                  <button type="button" [class.active]="action() === 'damage'" (click)="setAction('damage')">Dano</button>
-                  <button type="button" [class.active]="action() === 'heal'" (click)="setAction('heal')">Cura</button>
-                </div>
-
-                <div class="form-grid">
-                  <label>
-                    Valor
-                    <input type="number" min="1" [value]="amount()" (input)="setAmount($any($event.target).value)">
-                  </label>
-
-                  <label>
-                    Tipo
-                    <select [value]="action() === 'heal' ? 'cura' : damageType()" [disabled]="action() === 'heal'" (change)="setDamageType($any($event.target).value)">
-                      @for (profile of damageProfiles(); track profile.type) {
-                        <option [value]="profile.type">{{ damageLabel(profile.type) }}</option>
-                      }
-                    </select>
-                  </label>
-                </div>
-
-                <label class="note-field">
-                  Nota do registro
-                  <textarea rows="2" [value]="note()" (input)="setNote($any($event.target).value)" placeholder="Ex: ataque da espada flamejante"></textarea>
-                </label>
-
-                <div class="execution-preview" [class.warn]="hpPreview().reason === 'weakness'" [class.safe]="hpPreview().reason === 'resistance' || action() === 'heal'">
-                  <strong>{{ previewMessage(entity) }}</strong>
-                  <small>O GM confirma antes de aplicar. O BaseState permanece imutavel.</small>
-                </div>
-
-                <button class="apply-button" type="button" (click)="applyHpChange(entity)">
-                  Confirmar {{ action() === 'heal' ? 'cura' : 'dano' }}
-                </button>
-              </section>
-            }
-          </section>
-        } @else {
-          <section class="panel sheet empty-state">
-            <h2>Nenhuma ficha selecionada</h2>
-            <p>Crie uma ficha para comecar a preparar a sessao.</p>
-          </section>
-        }
-
-        <aside class="side-stack">
-          <section class="panel lobby-preview" aria-label="Previa do lobby">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Master Lore Guard</p>
-                <h2>Lobby da mesa</h2>
-              </div>
-              <button class="ghost-button compact-button" type="button" [disabled]="isLoading()" (click)="loadCurrentLobbyParticipants()">Atualizar</button>
-            </div>
-
-            <div class="lobby-admin">
-              <label>
-                Senha do lobby
-                <input type="password" [placeholder]="lobbySettings()?.hasPassword ? 'Senha configurada' : 'Defina uma senha'" [value]="lobbyPasswordDraft()" (input)="setLobbyPasswordDraft($any($event.target).value)">
-              </label>
-              <label>
-                Limite
-                <input type="number" min="1" max="100" [value]="lobbyMaxParticipantsDraft()" (input)="setLobbyMaxParticipantsDraft($any($event.target).value)">
-              </label>
-              <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="saveLobbySettings()">Abrir lobby</button>
-            </div>
-
-            <div class="lobby-link-row">
-              <input type="text" readonly [value]="lobbyLink()">
-            </div>
-
-            <label class="participant-select">
-              Jogador especifico
-              <select [value]="selectedLobbyParticipantId()" (change)="setSelectedLobbyParticipantId($any($event.target).value)">
-                <option value="">Todos / publico</option>
-                @for (participant of lobbyParticipants(); track participant.id) {
-                  <option [value]="participant.id">{{ participant.nick }}</option>
+                @if (entity.type === 'Ability') {
+                  <div class="sheet-grid">
+                    <div>
+                      <h3>Habilidade</h3>
+                      <p>{{ abilitySummary(entity) }}</p>
+                    </div>
+                  </div>
+                } @else {
+                  <div class="hp-block">
+                    <div class="hp-topline">
+                      <strong>{{ entity.sessionState.currentHp }} / {{ entity.baseState.maxHp }} HP</strong>
+                      <span>{{ hpStateLabel(entity) }}</span>
+                    </div>
+                    <div class="hp-track">
+                      <span [style.width.%]="hpPercent(entity)"></span>
+                    </div>
+                  </div>
                 }
-              </select>
-            </label>
 
-            <div class="participant-list">
-              @for (participant of lobbyParticipants(); track participant.id) {
-                <span>{{ participant.nick }}</span>
-              } @empty {
-                <small class="muted">Nenhum jogador conectado ainda.</small>
-              }
-            </div>
-
-            @for (entity of publicEntities(); track entity.id) {
-              <article class="public-card">
-                <img [src]="entity.imageUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=300&q=80'" [alt]="entity.name">
-                <div>
-                  <strong>{{ entity.name }}</strong>
-                  @if (entity.isGravelyWounded) {
-                    <small>Gravemente Ferido</small>
-                  } @else {
-                    <small>Informacao publica</small>
-                  }
+                <div class="private-note">
+                  <h3>Notas privadas</h3>
+                  <p>{{ entity.baseState.gmNotes || 'Nenhuma nota privada cadastrada.' }}</p>
                 </div>
-              </article>
-            } @empty {
-              <p class="muted">Nada publico no momento.</p>
-            }
-
-            <div class="visibility-list">
-              @for (entity of entities(); track entity.id) {
-                <article>
-                  <strong>{{ entity.baseState.name }}</strong>
-                  <select [value]="entity.visibility" (change)="setEntityLobbyVisibility(entity, $any($event.target).value, selectedLobbyParticipantId())">
-                    <option value="private">Privado</option>
-                    <option value="imageOnly">Imagem apenas</option>
-                    <option value="nameAndImage">Nome + imagem</option>
-                    <option value="publicSheet">Ficha publica</option>
-                  </select>
-                  <button type="button" [disabled]="isLoading() || !selectedLobbyParticipantId()" (click)="assignEntityToLobbyParticipant(entity, selectedLobbyParticipantId())">Designar</button>
-                </article>
               }
-            </div>
-          </section>
-
-          <section class="panel session-panel" aria-label="Sessoes e encontros">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Sessoes</p>
-                <h2>Encontros</h2>
+            } @else {
+              <div class="empty-state">
+                <h2>Nenhuma ficha selecionada</h2>
+                <p>Crie uma ficha para alimentar as sessoes da campanha.</p>
               </div>
-            </div>
-
-            <div class="session-form">
-              <label>
-                Nome do encontro
-                <input type="text" [value]="draftEncounterName()" (input)="setDraftEncounterName($any($event.target).value)">
-              </label>
-              <label>
-                Notas
-                <input type="text" [value]="draftEncounterNotes()" (input)="setDraftEncounterNotes($any($event.target).value)">
-              </label>
-              <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="addEncounter()">Adicionar encontro</button>
-            </div>
-
-            <div class="config-list compact">
-              @for (encounter of selectedCampaign()?.settings?.encounters ?? []; track encounter.id) {
-                <article>
-                  <strong>{{ encounter.name }}</strong>
-                  <small>{{ encounter.notes || 'Sem notas' }}</small>
-                  <button type="button" [disabled]="isLoading()" (click)="removeEncounter(encounter.id)">Remover</button>
-                </article>
-              } @empty {
-                <p class="muted">Adicione encontros quando a sessao estiver pronta.</p>
-              }
-            </div>
-          </section>
-
-          <section class="panel log-panel" aria-label="Historico de combate">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Sessao</p>
-                <h2>Historico</h2>
-              </div>
-            </div>
-
-            @for (entry of combatLog(); track entry.id) {
-              <article class="log-entry">
-                <small>{{ formatLogTime(entry.createdAt) }} · {{ damageLabel(entry.damageType) }}</small>
-                <strong>{{ entry.entityName }}</strong>
-                <p>
-                  {{ entry.action === 'heal' ? 'Curou' : 'Sofreu' }}
-                  {{ entry.finalAmount }} HP
-                  <span>({{ entry.hpBefore }} -> {{ entry.hpAfter }})</span>
-                </p>
-                @if (entry.note) {
-                  <em>{{ entry.note }}</em>
-                }
-              </article>
-            } @empty {
-              <p class="muted">As acoes confirmadas aparecem aqui.</p>
             }
           </section>
-        </aside>
-      </section>
+        </section>
       } @else {
         <section class="lore-workspace" aria-label="Mapa mental de lore">
           <section class="panel lore-tools">
@@ -683,6 +982,9 @@
               Historia
               <textarea rows="4" [value]="loreText()" (input)="setLoreText($any($event.target).value)"></textarea>
             </label>
+            @if (loreError()) {
+              <p class="message error">{{ loreError() }}</p>
+            }
             <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="addLoreNode()">Adicionar campo</button>
 
             <div class="form-grid lore-link-form">
@@ -732,7 +1034,13 @@
                       }
                       <strong>{{ node.title }}</strong>
                       <p>{{ node.text }}</p>
-                      <button type="button" (click)="$event.stopPropagation(); removeLoreNode(node.id)">Remover</button>
+                      <div class="lore-node-actions">
+                        <select [value]="loreNodeVisibility(node)" (click)="$event.stopPropagation()" (change)="$event.stopPropagation(); setLoreNodeVisibility(node.id, $any($event.target).value)">
+                          <option value="gm">Apenas GM</option>
+                          <option value="public">Publico</option>
+                        </select>
+                        <button type="button" (click)="$event.stopPropagation(); removeLoreNode(node.id)">Remover</button>
+                      </div>
                     </article>
                   } @empty {
                     <p class="muted lore-empty">Adicione campos de lore para montar o mapa mental.</p>
@@ -780,23 +1088,52 @@
           <option value="NPC">NPC</option>
           <option value="Enemy">Inimigo</option>
           <option value="Object">Objeto</option>
+          <option value="Ability">Habilidade</option>
         </select>
       </label>
     </div>
 
-    <div class="form-grid">
-      <label>
-        HP maximo
-        <input type="number" min="1" [value]="draftMaxHp()" (input)="setDraftMaxHp($any($event.target).value)">
+  <div class="form-grid">
+    <label>
+      HP maximo
+      <input type="number" min="1" [value]="draftMaxHp()" (input)="setDraftMaxHp($any($event.target).value)">
       </label>
 
       <label>
         Imagem publica
-        <input type="url" [value]="draftImageUrl()" (input)="setDraftImageUrl($any($event.target).value)" placeholder="https://...">
+      <input type="url" [value]="draftImageUrl()" (input)="setDraftImageUrl($any($event.target).value)" placeholder="https://...">
+    </label>
+  </div>
+
+  @if (draftType() === 'Ability') {
+    <div class="ability-grid">
+      <label>
+        Duracao
+        <select [value]="draftAbilityTiming()" (change)="setDraftAbilityTiming($any($event.target).value)">
+          <option value="instant">Instantanea</option>
+          <option value="perRound">Por round</option>
+        </select>
+      </label>
+      <label>
+        Dano
+        <input type="number" min="0" [value]="draftAbilityDamage()" (input)="setDraftAbilityDamage($any($event.target).value)">
+      </label>
+      <label>
+        Tipo de dano
+        <select [value]="draftAbilityDamageType()" (change)="setDraftAbilityDamageType($any($event.target).value)">
+          @for (damage of campaignDamageTypes(); track damage.id) {
+            <option [value]="damage.id">{{ damage.name }}</option>
+          }
+        </select>
+      </label>
+      <label>
+        Rounds ativos
+        <input type="number" min="0" [value]="draftAbilityDurationRounds()" (input)="setDraftAbilityDurationRounds($any($event.target).value)">
       </label>
     </div>
+  }
 
-    <div class="form-grid">
+  <div class="form-grid">
       <label>
         Resistencias
         <div class="select-add-row">
@@ -907,6 +1244,82 @@
           </article>
         </section>
 
+        @if (lobbyState()?.campaign?.phase === 'combat') {
+          <section class="combat-lobby-card">
+            <div>
+              <p class="eyebrow">Modo Combate</p>
+              <h2>Enviar iniciativa</h2>
+            </div>
+
+            @if (lobbyState()?.activeCombat) {
+              <div class="turn-summary player">
+                <span>Turno atual: <b>{{ lobbyTurnEntityName() }}</b></span>
+                <span>Proximo jogador: <b>{{ lobbyTurnEntityName(1) }}</b></span>
+              </div>
+            }
+
+            @if (lobbyState()?.publicBoard; as board) {
+              <section class="player-board-panel">
+                <div>
+                  <p class="eyebrow">Board publico</p>
+                  <h3>{{ board.encounterName }}</h3>
+                </div>
+                <div class="combat-board player-board" [style.grid-template-columns]="'repeat(' + board.width + ', minmax(30px, 1fr))'">
+                  @for (cell of lobbyBoardCells(); track cell.key) {
+                    <div class="combat-board-cell">
+                      @if (lobbyBoardEntityAt(cell.x, cell.y); as boardEntity) {
+                        <span [title]="boardEntity.baseState.name || 'Ficha'">{{ (boardEntity.baseState.name || '??').slice(0, 2).toUpperCase() }}</span>
+                      }
+                    </div>
+                  }
+                </div>
+                @if ((board.roundCounters?.length || 0) > 0) {
+                  <div class="round-counter-list compact">
+                    @for (counter of board.roundCounters ?? []; track counter.id) {
+                      <span>{{ counter.name }} · {{ counter.rounds }} round(s)</span>
+                    }
+                  </div>
+                }
+              </section>
+            }
+
+            <div class="initiative-form">
+              <label>
+                Ficha
+                <select [value]="lobbyInitiativeEntityId()" (change)="setLobbyInitiativeEntityId($any($event.target).value)">
+                  <option value="">Meu nick</option>
+                  @for (entity of assignedLobbyEntities(); track entity.id) {
+                    <option [value]="entity.id">{{ entity.baseState.name }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                Valor
+                <input type="number" [value]="lobbyInitiativeValue()" (input)="setLobbyInitiativeValue($any($event.target).value)">
+              </label>
+              <label class="wide">
+                Nota
+                <input type="text" [value]="lobbyInitiativeNote()" placeholder="Ex: vantagem, +2" (input)="setLobbyInitiativeNote($any($event.target).value)">
+              </label>
+              <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="submitLobbyInitiative()">Enviar</button>
+            </div>
+
+            <div class="initiative-list player">
+              @for (initiative of lobbyState()?.initiatives ?? []; track initiative.id) {
+                <article>
+                  <strong>{{ initiative.value }}</strong>
+                  <span>
+                    <b>{{ lobbyInitiativeLabel(initiative) }}</b>
+                    <small>{{ initiative.note || 'Enviada' }}</small>
+                  </span>
+                </article>
+              } @empty {
+                <p class="muted">Nenhuma iniciativa enviada ainda.</p>
+              }
+            </div>
+          </section>
+        }
+
         <section class="lobby-player-grid">
           @for (entity of lobbyState()?.entities ?? []; track entity.id) {
             <article class="public-card player-entity-card">
@@ -919,6 +1332,35 @@
                   <small>Informacao parcial</small>
                 }
               </div>
+
+              @if (entity.canEditSession && entity.sessionState) {
+                <div class="player-session-controls">
+                  <label>
+                    HP atual
+                    <input type="number" [value]="entity.sessionState.currentHp" (change)="updateLobbyEntityHp(entity, $any($event.target).value)">
+                  </label>
+                  <label>
+                    Mana
+                    <input type="number" [value]="entity.sessionState.mana ?? 0" (change)="updateLobbyEntityMana(entity, $any($event.target).value)">
+                  </label>
+                  <label>
+                    Mana max.
+                    <input type="number" [value]="entity.sessionState.maxMana ?? 0" (change)="updateLobbyEntityMaxMana(entity, $any($event.target).value)">
+                  </label>
+                  <label>
+                    Status
+                    <input type="text" [value]="entity.sessionState.status" (change)="updateLobbyEntityStatus(entity, $any($event.target).value)">
+                  </label>
+                  <label class="wide">
+                    Condicoes
+                    <input type="text" [value]="lobbyConditionsText(entity)" placeholder="Ex: envenenado, caido" (change)="updateLobbyEntityConditions(entity, $any($event.target).value)">
+                  </label>
+                  <label class="wide">
+                    Modificadores
+                    <textarea rows="3" [value]="lobbyModifiersText(entity)" placeholder="Ex: CA: +2&#10;Furtividade: vantagem" (change)="updateLobbyEntityModifiers(entity, $any($event.target).value)"></textarea>
+                  </label>
+                </div>
+              }
             </article>
           } @empty {
             <p class="muted">Nada revelado pelo GM ainda.</p>
@@ -927,4 +1369,287 @@
       </section>
     }
   </main>
+}
+
+@if (isLobbyModalOpen() && activeLobbySession(); as session) {
+  <div class="combat-modal-backdrop" role="presentation" (click)="closeLobbyModal()">
+    <section class="lobby-session-modal" role="dialog" aria-modal="true" [attr.aria-label]="'Lobby da Sessao ' + session.name" (click)="$event.stopPropagation()">
+      <header>
+        <div>
+          <p class="eyebrow">Lobby</p>
+          <h2>Lobby da Sessao {{ session.name }}</h2>
+          <small>{{ session.encounters.length }} encontro(s) configurado(s)</small>
+        </div>
+        <button type="button" aria-label="Fechar" (click)="closeLobbyModal()">x</button>
+      </header>
+
+      <section class="lobby-session-grid">
+        <article class="combat-modal-panel">
+          <h3>Encontros</h3>
+          <div class="config-list compact">
+            @for (encounter of session.encounters; track encounter.id) {
+              <article>
+                <strong>{{ encounter.name }}</strong>
+                <small>{{ encounterEntityNames(encounter) || 'Sem fichas' }}</small>
+                <small>Board {{ encounter.board?.width || 8 }}x{{ encounter.board?.height || 6 }} · {{ encounter.board?.visibility === 'public' ? 'Publico' : 'Apenas GMs' }}</small>
+                <button type="button" [disabled]="isLoading() || phase() === 'planning'" (click)="startEncounterCombat(encounter)">Iniciar Modo Combate</button>
+              </article>
+            } @empty {
+              <p class="muted">Configure encontros antes de usar o lobby.</p>
+            }
+          </div>
+        </article>
+
+        <article class="combat-modal-panel">
+          <h3>Mesa</h3>
+          @if (canShareLobbyLink()) {
+            <div class="lobby-link-row">
+              <small>Link dos jogadores</small>
+              <input type="text" readonly [value]="lobbyLink()">
+            </div>
+          }
+          <button class="ghost-button compact-button" type="button" [disabled]="isLoading()" (click)="loadCurrentLobbyParticipants()">Atualizar jogadores</button>
+          <div class="participant-list">
+            @for (participant of lobbyParticipants(); track participant.id) {
+              <span>{{ participant.nick }}</span>
+            } @empty {
+              <small class="muted">Nenhum jogador conectado ainda.</small>
+            }
+          </div>
+          <label class="participant-select">
+            Jogador para visibilidade
+            <select [value]="selectedLobbyParticipantId()" (change)="setSelectedLobbyParticipantId($any($event.target).value)">
+              <option value="">Todos / publico</option>
+              @for (participant of lobbyParticipants(); track participant.id) {
+                <option [value]="participant.id">{{ participant.nick }}</option>
+              }
+            </select>
+          </label>
+        </article>
+
+        <article class="combat-modal-panel wide">
+          <h3>Visibilidade das fichas</h3>
+          <div class="visibility-list lobby-modal-visibility">
+            @for (entity of entities(); track entity.id) {
+              <article>
+                <strong>{{ entity.baseState.name }}</strong>
+                <small>{{ entity.type }}</small>
+                <select [value]="entity.visibility" (change)="setEntityLobbyVisibility(entity, $any($event.target).value, selectedLobbyParticipantId())">
+                  <option value="private">Privado</option>
+                  <option value="imageOnly">Imagem apenas</option>
+                  <option value="nameAndImage">Nome + imagem</option>
+                  <option value="publicSheet">Ficha publica</option>
+                </select>
+                <button type="button" [disabled]="isLoading() || !selectedLobbyParticipantId()" (click)="assignEntityToLobbyParticipant(entity, selectedLobbyParticipantId())">Designar ao jogador</button>
+              </article>
+            } @empty {
+              <p class="muted">Crie fichas na Biblioteca para controlar visibilidade.</p>
+            }
+          </div>
+        </article>
+
+        <article class="combat-modal-panel wide">
+          <h3>Historico do lobby</h3>
+          <div class="session-run-log">
+            @for (entry of combatLog(); track entry.id) {
+              <article class="log-entry">
+                <small>{{ formatLogTime(entry.createdAt) }} · {{ damageLabel(entry.damageType) }}</small>
+                <strong>{{ entry.entityName }}</strong>
+                <p>{{ entry.action === 'heal' ? 'Curou' : 'Sofreu' }} {{ entry.finalAmount }} HP <span>({{ entry.hpBefore }} -> {{ entry.hpAfter }})</span></p>
+              </article>
+            } @empty {
+              <p class="muted">As acoes confirmadas aparecem aqui.</p>
+            }
+          </div>
+        </article>
+
+        <article class="combat-modal-panel wide">
+          <h3>Resumo final</h3>
+          <textarea rows="4" [value]="lobbySummaryDraft()" (input)="setLobbySummaryDraft($any($event.target).value)" placeholder="Resumo do que aconteceu neste lobby"></textarea>
+          <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="finishLobbyModal()">Finalizar Lobby</button>
+        </article>
+      </section>
+    </section>
+  </div>
+}
+
+@if (isInitiativePopupOpen() && activeCombat(); as combat) {
+  <div class="initiative-popup-backdrop" role="presentation">
+    <section class="initiative-popup" role="dialog" aria-modal="true" aria-label="Iniciativas do Combate">
+      <header>
+        <div>
+          <p class="eyebrow">Modo Combate</p>
+          <h2>{{ combat.name }}</h2>
+          <small>Insira as iniciativas antes de começar</small>
+        </div>
+        <button type="button" aria-label="Fechar" (click)="closeInitiativePopup()">x</button>
+      </header>
+
+      <div class="initiative-popup-content">
+        <div class="initiative-popup-form">
+          <div class="initiative-form gm">
+            <label>
+              Ficha
+              <select [value]="gmInitiativeEntityId()" (change)="setGmInitiativeEntityId($any($event.target).value)">
+                <option value="">Selecione</option>
+                @for (entity of combatParticipantEntities(combat); track entity.id) {
+                  <option [value]="entity.id">{{ entity.baseState.name }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Valor
+              <input type="number" [value]="gmInitiativeValue()" (input)="setGmInitiativeValue($any($event.target).value)">
+            </label>
+            <label class="wide">
+              Nota
+              <input type="text" [value]="gmInitiativeNote()" (input)="setGmInitiativeNote($any($event.target).value)">
+            </label>
+            <button class="apply-button inline" type="button" [disabled]="isLoading()" (click)="submitGmInitiative()">Lançar pelo GM</button>
+          </div>
+
+          <div class="initiative-list">
+            @for (entity of combatParticipantEntities(combat); track entity.id) {
+              <article [class]="getEntityInitiative(entity.id) !== '' ? 'initiative-done' : 'initiative-pending'">
+                <strong>{{ getEntityInitiative(entity.id) !== '' ? getEntityInitiative(entity.id) : '—' }}</strong>
+                <span><b>{{ entity.baseState.name }}</b></span>
+              </article>
+            }
+          </div>
+        </div>
+
+        <button class="apply-button" type="button" [disabled]="isLoading()" (click)="openCombatFromPopup()">{{ initiativePopupConfirmLabel() }}</button>
+      </div>
+    </section>
+  </div>
+}
+
+@if (isCombatModalOpen() && activeCombat(); as combat) {
+  <div class="combat-modal-backdrop" role="presentation" (click)="closeCombatModal()">
+    <section class="combat-modal" role="dialog" aria-modal="true" aria-label="Modo Combate" (click)="$event.stopPropagation()">
+      <header>
+        <div>
+          <p class="eyebrow">Modo Combate</p>
+          <h2>{{ combat.name }}</h2>
+          <small>{{ combatParticipantNames(combat) }}</small>
+        </div>
+        <button type="button" aria-label="Fechar" (click)="closeCombatModal()">x</button>
+      </header>
+
+      <section class="combat-modal-grid">
+        <article class="combat-modal-panel wide">
+          <h3>Turno</h3>
+          <div class="turn-summary player">
+            <span>Round: <b>{{ combat.roundNumber || 1 }}</b></span>
+            <span>Turno: <b>{{ combat.turnOrderEntityIds.length ? combat.currentTurnIndex + 1 : 0 }} / {{ combat.turnOrderEntityIds.length }}</b></span>
+            <span>Turno atual: <b>{{ combatTurnEntitySummary(combat) }}</b></span>
+            <span>Proximo jogador: <b>{{ combatTurnEntitySummary(combat, 1) }}</b></span>
+          </div>
+          <div class="turn-actions">
+            <button type="button" [disabled]="isLoading()" (click)="openInitiativeEditor()">Editar Iniciativas</button>
+            <button type="button" [disabled]="isLoading() || combat.turnOrderEntityIds.length === 0" (click)="moveCombatTurn(combat, -1)">Voltar</button>
+            <button type="button" [disabled]="isLoading() || combat.turnOrderEntityIds.length === 0" (click)="moveCombatTurn(combat, 1)">Proximo</button>
+          </div>
+          <div class="turn-participant-list">
+            <div class="turn-participant-header">
+              <span>Ficha</span>
+              <span></span>
+              <span>HP</span>
+              <span>Init.</span>
+            </div>
+            @for (entity of combatParticipantEntitiesSortedByInitiative(combat); track entity.id) {
+              <div class="turn-participant-row" [class.active-turn]="isTurnEntity(combat, entity.id)">
+                <span class="turn-participant-name">{{ entity.baseState.name }}</span>
+                <div class="turn-participant-actions">
+                  <button type="button" class="dmg-btn" [disabled]="isLoading()" (click)="openHpActionModal(entity, 'damage')">Aplicar Dano</button>
+                  <button type="button" class="heal-btn" [disabled]="isLoading()" (click)="openHpActionModal(entity, 'heal')">Aplicar Cura</button>
+                </div>
+                <span class="turn-participant-hp">{{ entity.sessionState.currentHp }}/{{ entity.baseState.maxHp }}</span>
+                <span class="turn-initiative-value">{{ getEntityInitiative(entity.id) !== '' ? getEntityInitiative(entity.id) : '—' }}</span>
+              </div>
+            }
+          </div>
+        </article>
+
+        @if (activeEncounter(); as encounter) {
+          <article class="combat-modal-panel wide">
+            <h3>Board de Combate</h3>
+            @if ((encounter.roundCounters?.length || 0) > 0) {
+              <div class="round-counter-list">
+                @for (counter of encounter.roundCounters ?? []; track counter.id) {
+                  <span>{{ counter.name }} · {{ counter.rounds }} round(s) · {{ counter.visibility === 'public' ? 'Publico' : 'GM' }}</span>
+                }
+              </div>
+            }
+            <label>
+              Ficha para posicionar
+              <select [value]="boardSelectedEntityId()" (change)="setBoardSelectedEntityId($any($event.target).value)">
+                @for (entity of combatParticipantEntities(combat); track entity.id) {
+                  <option [value]="entity.id">{{ entity.baseState.name }}</option>
+                }
+              </select>
+            </label>
+            <button class="ghost-button compact-button" type="button" [disabled]="!boardSelectedEntityId() || isLoading()" (click)="removeBoardEntity(encounter)">Remover do board</button>
+            <div class="combat-board" [style.grid-template-columns]="'repeat(' + (encounter.board?.width || 8) + ', minmax(34px, 1fr))'">
+              @for (cell of boardCells(encounter); track cell.key) {
+                <button type="button" class="combat-board-cell" (click)="placeBoardEntity(encounter, cell.x, cell.y)">
+                  @if (boardEntityAt(encounter, cell.x, cell.y); as boardEntity) {
+                    <span [class.selected]="isBoardEntitySelected(boardEntity.id)" [title]="boardEntity.baseState.name">{{ boardEntity.baseState.name.slice(0, 2).toUpperCase() }}</span>
+                  }
+                </button>
+              }
+            </div>
+          </article>
+        }
+      </section>
+    </section>
+  </div>
+}
+
+@if (isHpActionModalOpen() && hpActionModalEntity(); as entity) {
+  <div class="hp-action-backdrop" role="presentation" (click)="closeHpActionModal()">
+    <section class="hp-action-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+      <header>
+        <h3>{{ action() === 'damage' ? 'Aplicar Dano' : 'Aplicar Cura' }} — {{ entity.baseState.name }}</h3>
+        <button type="button" aria-label="Fechar" (click)="closeHpActionModal()">x</button>
+      </header>
+      <div class="hp-block compact">
+        <div class="hp-topline">
+          <strong>{{ entity.baseState.name }}</strong>
+          <span>{{ entity.sessionState.currentHp }} / {{ entity.baseState.maxHp }} HP</span>
+        </div>
+        <div class="hp-track">
+          <span [style.width.%]="hpPercent(entity)"></span>
+        </div>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="action() === 'damage'" (click)="setAction('damage')">Dano</button>
+        <button type="button" [class.active]="action() === 'heal'" (click)="setAction('heal')">Cura</button>
+      </div>
+      <label>
+        Valor
+        <input type="number" min="1" [value]="amount()" (input)="setAmount($any($event.target).value)">
+      </label>
+      @if (action() === 'damage') {
+        <label>
+          Tipo
+          <select [value]="damageType()" (change)="setDamageType($any($event.target).value)">
+            @for (damage of campaignDamageTypes(); track damage.id) {
+              <option [value]="damage.id">{{ damage.name }}</option>
+            }
+          </select>
+        </label>
+      }
+      <label>
+        Nota
+        <input type="text" [value]="note()" (input)="setNote($any($event.target).value)">
+      </label>
+      <div class="execution-preview" [class.warn]="action() === 'damage'" [class.safe]="action() === 'heal'">
+        <strong>{{ previewMessage(entity) }}</strong>
+      </div>
+      <button class="apply-button" type="button" [disabled]="isLoading()" (click)="applyHpFromModal()">
+        Aplicar em {{ entity.baseState.name }}
+      </button>
+    </section>
+  </div>
 }

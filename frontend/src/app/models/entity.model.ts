@@ -1,4 +1,4 @@
-export type EntityType = 'PC' | 'NPC' | 'Enemy' | 'Object';
+export type EntityType = 'PC' | 'NPC' | 'Enemy' | 'Object' | 'Ability';
 
 export type VisibilityMode = 'private' | 'public' | 'prepared' | 'imageOnly' | 'nameAndImage' | 'publicSheet';
 
@@ -20,6 +20,32 @@ export interface Condition {
   isPublic: boolean;
 }
 
+export interface SessionResource {
+  id: string;
+  name: string;
+  current: number;
+  max: number;
+  isPublic: boolean;
+}
+
+export interface SessionModifier {
+  id: string;
+  name: string;
+  value: string;
+  isPublic: boolean;
+}
+
+export interface EntitySessionState {
+  currentHp: number;
+  status: EntityStatus | string;
+  conditions: Condition[];
+  isVisibleToPlayers: boolean;
+  mana?: number;
+  maxMana?: number;
+  resources?: SessionResource[];
+  modifiers?: SessionModifier[];
+}
+
 export interface DamageProfile {
   type: string;
   resistanceMultiplier: number;
@@ -34,6 +60,10 @@ export interface Entity {
   baseState: {
     name: string;
     maxHp: number;
+    abilityTiming?: 'instant' | 'perRound';
+    abilityDamage?: number;
+    abilityDamageType?: string;
+    abilityDurationRounds?: number;
     resistances: string[];
     weaknesses: string[];
     imageUrl: string;
@@ -41,16 +71,14 @@ export interface Entity {
     gmNotes: string;
     customFields: CustomField[];
   };
-  sessionState: {
-    currentHp: number;
-    status: EntityStatus;
-    conditions: Condition[];
-    isVisibleToPlayers: boolean;
-  };
+  canEditSession?: boolean;
+  sessionState: EntitySessionState;
 }
 
 export interface CombatLogEntry {
   id: string;
+  campaignId?: string;
+  sessionRunId?: string;
   entityId: string;
   entityName: string;
   action: 'damage' | 'heal';

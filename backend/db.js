@@ -2,8 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const dataDir = path.join(__dirname, '..', 'data');
-const dbPath = path.join(dataDir, 'rpgbot.sqlite');
+const dbPath = process.env.RPGBOT_DB_PATH || path.join(__dirname, '..', 'data', 'rpgbot.sqlite');
+const dataDir = path.dirname(dbPath);
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -26,6 +26,7 @@ function defaultCampaignSettings(systemKey = 'custom') {
       woundedThresholdPercent: 5
     },
     encounters: [],
+    sessions: [],
     templates: [],
     loreNodes: [],
     loreLinks: []
@@ -52,7 +53,8 @@ function defaultCampaignSettings(systemKey = 'custom') {
       ],
       templates: [
         { id: 'dnd-character', name: 'Personagem D&D 5.5', entityType: 'PC', fields: ['HP', 'CA', 'Deslocamento', 'Atributos'] },
-        { id: 'dnd-creature', name: 'Criatura D&D 5.5', entityType: 'Enemy', fields: ['HP', 'CA', 'Desafio', 'Ações'] }
+        { id: 'dnd-creature', name: 'Criatura D&D 5.5', entityType: 'Enemy', fields: ['HP', 'CA', 'Desafio', 'Ações'] },
+        { id: 'dnd-ability', name: 'Habilidade D&D 5.5', entityType: 'Ability', fields: ['Duracao', 'Dano', 'Tipo de dano', 'Rounds ativos'] }
       ]
     };
   }
@@ -80,6 +82,7 @@ db.exec(`
     system_key TEXT NOT NULL DEFAULT 'custom',
     settings_json TEXT NOT NULL DEFAULT '',
     phase TEXT NOT NULL DEFAULT 'planning',
+    active_combat_id TEXT NOT NULL DEFAULT '',
     active_combat_name TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -99,9 +102,21 @@ db.exec(`
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS session_runs (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS combat_logs (
     id TEXT PRIMARY KEY,
     campaign_id TEXT NOT NULL,
+    session_run_id TEXT NOT NULL DEFAULT '',
     entity_id TEXT NOT NULL,
     entity_name TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -113,7 +128,43 @@ db.exec(`
     note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_run_id) REFERENCES session_runs(id) ON DELETE SET DEFAULT,
     FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS combat_sessions (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    session_run_id TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'collectingInitiative',
+    participant_entity_ids_json TEXT NOT NULL DEFAULT '[]',
+    turn_order_entity_ids_json TEXT NOT NULL DEFAULT '[]',
+    current_turn_index INTEGER NOT NULL DEFAULT 0,
+    round_number INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_run_id) REFERENCES session_runs(id) ON DELETE SET DEFAULT
+  );
+
+  CREATE TABLE IF NOT EXISTS combat_initiatives (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    combat_id TEXT NOT NULL DEFAULT '',
+    participant_id TEXT NOT NULL,
+    entity_id TEXT,
+    participant_nick TEXT NOT NULL,
+    entity_name TEXT NOT NULL DEFAULT '',
+    value INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(campaign_id, combat_id, participant_id, entity_id),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (combat_id) REFERENCES combat_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (participant_id) REFERENCES lobby_participants(id) ON DELETE CASCADE,
+    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS campaign_lobby_settings (
@@ -180,6 +231,41 @@ if (!campaignColumns.includes('settings_json')) {
   db.exec(`ALTER TABLE campaigns ADD COLUMN settings_json TEXT NOT NULL DEFAULT '';`);
 }
 
+if (!campaignColumns.includes('active_combat_id')) {
+  db.exec(`ALTER TABLE campaigns ADD COLUMN active_combat_id TEXT NOT NULL DEFAULT '';`);
+}
+
+const initiativeColumns = db.prepare('PRAGMA table_info(combat_initiatives)').all().map((column) => column.name);
+
+if (!initiativeColumns.includes('combat_id')) {
+  db.exec(`ALTER TABLE combat_initiatives ADD COLUMN combat_id TEXT NOT NULL DEFAULT '';`);
+}
+
+const combatSessionColumns = db.prepare('PRAGMA table_info(combat_sessions)').all().map((column) => column.name);
+
+const combatLogColumns = db.prepare('PRAGMA table_info(combat_logs)').all().map((column) => column.name);
+
+if (!combatLogColumns.includes('session_run_id')) {
+  db.exec(`ALTER TABLE combat_logs ADD COLUMN session_run_id TEXT NOT NULL DEFAULT '';`);
+}
+
+if (!combatSessionColumns.includes('session_run_id')) {
+  db.exec(`ALTER TABLE combat_sessions ADD COLUMN session_run_id TEXT NOT NULL DEFAULT '';`);
+}
+
+if (!combatSessionColumns.includes('turn_order_entity_ids_json')) {
+  db.exec(`ALTER TABLE combat_sessions ADD COLUMN turn_order_entity_ids_json TEXT NOT NULL DEFAULT '[]';`);
+}
+
+if (!combatSessionColumns.includes('round_number')) {
+  db.exec(`ALTER TABLE combat_sessions ADD COLUMN round_number INTEGER NOT NULL DEFAULT 1;`);
+}
+
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_combat_initiatives_unique_combat
+  ON combat_initiatives(campaign_id, combat_id, participant_id, entity_id);
+`);
+
 db.prepare("UPDATE campaigns SET settings_json = ? WHERE settings_json = '' OR settings_json IS NULL")
   .run(JSON.stringify(defaultCampaignSettings('custom')));
 
@@ -191,6 +277,7 @@ function toEntity(row) {
   return {
     id: row.id,
     campaignId: row.campaign_id,
+    sessionRunId: row.session_run_id || '',
     type: row.type,
     visibility: row.visibility,
     playerCanEdit: Boolean(row.player_can_edit),
@@ -209,6 +296,7 @@ function toCampaign(row) {
     systemKey: row.system_key,
     settings: row.settings_json ? JSON.parse(row.settings_json) : defaultCampaignSettings(row.system_key),
     phase: row.phase,
+    activeCombatId: row.active_combat_id || '',
     activeCombatName: row.active_combat_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -229,6 +317,50 @@ function toCombatLog(row) {
     hpAfter: row.hp_after,
     note: row.note,
     createdAt: row.created_at
+  };
+}
+
+function toCombatSession(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    sessionRunId: row.session_run_id || '',
+    name: row.name,
+    status: row.status,
+    participantEntityIds: row.participant_entity_ids_json ? JSON.parse(row.participant_entity_ids_json) : [],
+    turnOrderEntityIds: row.turn_order_entity_ids_json ? JSON.parse(row.turn_order_entity_ids_json) : [],
+    currentTurnIndex: row.current_turn_index,
+    roundNumber: row.round_number || 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function toSessionRun(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    status: row.status,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function toCombatInitiative(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    combatId: row.combat_id || '',
+    participantId: row.participant_id,
+    entityId: row.entity_id || '',
+    participantNick: row.participant_nick,
+    entityName: row.entity_name,
+    value: row.value,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -258,8 +390,11 @@ module.exports = {
   now,
   defaultCampaignSettings,
   toCampaign,
+  toCombatInitiative,
   toCombatLog,
+  toCombatSession,
   toEntity,
   toLobbyParticipant,
-  toLobbySettings
+  toLobbySettings,
+  toSessionRun
 };

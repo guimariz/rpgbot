@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js && node --check db.js && node --check auth.js"
+    "check": "node --check server.js && node --check db.js && node --check auth.js",
+    "test": "node --test integration.test.js"
   },
   "engines": {
     "node": ">=24.0.0"

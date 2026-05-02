@@ -1,6 +1,6 @@
 const http = require('node:http');
 const crypto = require('node:crypto');
-const { db, defaultCampaignSettings, now, toCampaign, toCombatLog, toEntity, toLobbyParticipant, toLobbySettings } = require('./db');
+const { db, defaultCampaignSettings, now, toCampaign, toCombatInitiative, toCombatLog, toCombatSession, toEntity, toLobbyParticipant, toLobbySettings, toSessionRun } = require('./db');
 const { createToken, hashPassword, verifyPassword, verifyToken } = require('./auth');
 
 const port = Number(process.env.PORT || 3001);
@@ -15,14 +15,14 @@ function isDevelopmentFrontendOrigin(origin) {
 
   try {
     const url = new URL(origin);
-    const isAngularPort = url.port === '4200';
+    const isDevelopmentPort = Boolean(url.port) && Number(url.port) >= 1024;
     const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
     const isPrivateLan =
       url.hostname.startsWith('192.168.') ||
       url.hostname.startsWith('10.') ||
       /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname);
 
-    return url.protocol === 'http:' && isAngularPort && (isLocalhost || isPrivateLan);
+    return url.protocol === 'http:' && isDevelopmentPort && (isLocalhost || isPrivateLan);
   } catch {
     return false;
   }
@@ -195,6 +195,10 @@ function normalizeEntityBody(body) {
     baseState: {
       name: String(baseState.name || 'Ficha sem nome'),
       maxHp,
+      abilityTiming: ['instant', 'perRound'].includes(String(baseState.abilityTiming)) ? String(baseState.abilityTiming) : 'instant',
+      abilityDamage: Math.max(0, Number(baseState.abilityDamage || 0)),
+      abilityDamageType: String(baseState.abilityDamageType || ''),
+      abilityDurationRounds: Math.max(0, Number(baseState.abilityDurationRounds || 0)),
       resistances: Array.isArray(baseState.resistances) ? baseState.resistances : [],
       weaknesses: Array.isArray(baseState.weaknesses) ? baseState.weaknesses : [],
       imageUrl: String(baseState.imageUrl || ''),
@@ -206,9 +210,64 @@ function normalizeEntityBody(body) {
       currentHp: Number(body.sessionState?.currentHp ?? maxHp),
       status: String(body.sessionState?.status || 'Ativo'),
       conditions: Array.isArray(body.sessionState?.conditions) ? body.sessionState.conditions : [],
+      mana: Number(body.sessionState?.mana ?? 0),
+      maxMana: Number(body.sessionState?.maxMana ?? 0),
+      resources: Array.isArray(body.sessionState?.resources) ? body.sessionState.resources : [],
+      modifiers: Array.isArray(body.sessionState?.modifiers) ? body.sessionState.modifiers : [],
       isVisibleToPlayers: Boolean(body.sessionState?.isVisibleToPlayers)
     }
   };
+}
+
+function normalizeSessionStatePatch(body) {
+  const sessionState = body.sessionState && typeof body.sessionState === 'object' ? body.sessionState : {};
+  const patch = {};
+
+  if (sessionState.currentHp !== undefined) {
+    patch.currentHp = Number(sessionState.currentHp);
+  }
+
+  if (sessionState.status !== undefined) {
+    patch.status = String(sessionState.status || 'Ativo');
+  }
+
+  if (sessionState.mana !== undefined) {
+    patch.mana = Math.max(0, Number(sessionState.mana || 0));
+  }
+
+  if (sessionState.maxMana !== undefined) {
+    patch.maxMana = Math.max(0, Number(sessionState.maxMana || 0));
+  }
+
+  if (Array.isArray(sessionState.conditions)) {
+    patch.conditions = sessionState.conditions.map((condition) => ({
+      id: String(condition.id || crypto.randomUUID()),
+      name: String(condition.name || '').trim(),
+      durationTurns: Number(condition.durationTurns || 0),
+      isPublic: condition.isPublic !== false
+    })).filter((condition) => condition.name);
+  }
+
+  if (Array.isArray(sessionState.resources)) {
+    patch.resources = sessionState.resources.map((resource) => ({
+      id: String(resource.id || crypto.randomUUID()),
+      name: String(resource.name || '').trim(),
+      current: Number(resource.current || 0),
+      max: Number(resource.max || 0),
+      isPublic: resource.isPublic !== false
+    })).filter((resource) => resource.name);
+  }
+
+  if (Array.isArray(sessionState.modifiers)) {
+    patch.modifiers = sessionState.modifiers.map((modifier) => ({
+      id: String(modifier.id || crypto.randomUUID()),
+      name: String(modifier.name || '').trim(),
+      value: String(modifier.value || '').trim(),
+      isPublic: modifier.isPublic !== false
+    })).filter((modifier) => modifier.name || modifier.value);
+  }
+
+  return patch;
 }
 
 function normalizeCombatLogBody(body) {
@@ -245,6 +304,7 @@ function normalizeCampaignSettings(settings, systemKey) {
     },
     damageTypes: Array.isArray(next.damageTypes) ? next.damageTypes : base.damageTypes,
     encounters: Array.isArray(next.encounters) ? next.encounters : base.encounters,
+    sessions: Array.isArray(next.sessions) ? next.sessions : base.sessions,
     templates: Array.isArray(next.templates) ? next.templates : base.templates,
     loreNodes: Array.isArray(next.loreNodes) ? next.loreNodes : base.loreNodes,
     loreLinks: Array.isArray(next.loreLinks) ? next.loreLinks : base.loreLinks,
@@ -280,6 +340,59 @@ function getOrCreateLobbySettings(campaignId) {
   `).run(campaignId, timestamp);
 
   return db.prepare('SELECT * FROM campaign_lobby_settings WHERE campaign_id = ?').get(campaignId);
+}
+
+function getActiveSessionRun(campaignId) {
+  return db
+    .prepare("SELECT * FROM session_runs WHERE campaign_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1")
+    .get(campaignId) || null;
+}
+
+function createSessionRun(campaignId) {
+  const timestamp = now();
+  const sessionRun = {
+    id: crypto.randomUUID(),
+    campaignId,
+    status: 'active',
+    startedAt: timestamp,
+    endedAt: '',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  db.prepare(`
+    INSERT INTO session_runs (id, campaign_id, status, started_at, ended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    sessionRun.id,
+    sessionRun.campaignId,
+    sessionRun.status,
+    sessionRun.startedAt,
+    sessionRun.endedAt,
+    sessionRun.createdAt,
+    sessionRun.updatedAt
+  );
+
+  return db.prepare('SELECT * FROM session_runs WHERE id = ?').get(sessionRun.id);
+}
+
+function getOrCreateGmLobbyParticipant(campaignId, user) {
+  const id = `gm-${campaignId}-${user.id}`;
+  const tokenHash = hashSecret(id);
+  const current = db.prepare('SELECT * FROM lobby_participants WHERE id = ?').get(id);
+  const timestamp = now();
+
+  if (current) {
+    db.prepare('UPDATE lobby_participants SET last_seen_at = ? WHERE id = ?').run(timestamp, id);
+    return db.prepare('SELECT * FROM lobby_participants WHERE id = ?').get(id);
+  }
+
+  db.prepare(`
+    INSERT INTO lobby_participants (id, campaign_id, nick, session_token_hash, is_guest, created_at, last_seen_at)
+    VALUES (?, ?, ?, ?, 0, ?, ?)
+  `).run(id, campaignId, user.name || 'GM', tokenHash, timestamp, timestamp);
+
+  return db.prepare('SELECT * FROM lobby_participants WHERE id = ?').get(id);
 }
 
 function getLobbyParticipantFromRequest(request, participantId) {
@@ -391,9 +504,55 @@ function sanitizeLoreForLobby(settings, participantId) {
   };
 }
 
+function sanitizeBoardForLobby(settings, activeCombat) {
+  if (!activeCombat) {
+    return null;
+  }
+
+  const sessions = Array.isArray(settings.sessions) ? settings.sessions : [];
+  const legacyEncounters = Array.isArray(settings.encounters) ? settings.encounters : [];
+  const encounters = [
+    ...legacyEncounters,
+    ...sessions.flatMap((session) => Array.isArray(session.encounters) ? session.encounters : [])
+  ];
+  const encounter = encounters.find((item) =>
+    item &&
+    item.name === activeCombat.name &&
+    item.board &&
+    item.board.visibility === 'public');
+
+  if (!encounter) {
+    return null;
+  }
+
+  return {
+    encounterId: String(encounter.id || ''),
+    encounterName: String(encounter.name || activeCombat.name),
+    width: Math.max(1, Number(encounter.board.width || 8)),
+    height: Math.max(1, Number(encounter.board.height || 6)),
+    positions: encounter.board.positions && typeof encounter.board.positions === 'object'
+      ? encounter.board.positions
+      : {},
+    roundCounters: Array.isArray(encounter.roundCounters)
+      ? encounter.roundCounters
+        .filter((counter) => counter && counter.visibility === 'public')
+        .map((counter) => ({
+          id: String(counter.id || ''),
+          name: String(counter.name || ''),
+          rounds: Math.max(1, Number(counter.rounds || 1)),
+          visibility: 'public'
+        }))
+      : []
+  };
+}
+
 function buildLobbyState(campaignRow, participantRow) {
   const campaign = toCampaign(campaignRow);
   const participant = toLobbyParticipant(participantRow);
+  const activeCombatRow = campaign.activeCombatId
+    ? db.prepare('SELECT * FROM combat_sessions WHERE id = ? AND campaign_id = ?').get(campaign.activeCombatId, campaign.id)
+    : null;
+  const activeCombat = activeCombatRow ? toCombatSession(activeCombatRow) : null;
   const entities = db
     .prepare('SELECT * FROM entities WHERE campaign_id = ? ORDER BY updated_at DESC')
     .all(campaign.id)
@@ -401,6 +560,11 @@ function buildLobbyState(campaignRow, participantRow) {
     .map((entity) => sanitizeEntityForLobby(entity, participant.id))
     .filter(Boolean);
   const lore = sanitizeLoreForLobby(campaign.settings, participant.id);
+  const publicBoard = sanitizeBoardForLobby(campaign.settings, activeCombat);
+  const initiatives = db
+    .prepare('SELECT * FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ? AND participant_id = ? ORDER BY value DESC, updated_at ASC')
+    .all(campaign.id, campaign.activeCombatId || '', participant.id)
+    .map(toCombatInitiative);
 
   return {
     participant,
@@ -408,10 +572,14 @@ function buildLobbyState(campaignRow, participantRow) {
       id: campaign.id,
       name: campaign.name,
       phase: campaign.phase,
+      activeCombatId: campaign.activeCombatId,
       activeCombatName: campaign.activeCombatName
     },
+    activeCombat,
     entities,
     lore,
+    publicBoard,
+    initiatives,
     serverTime: now()
   };
 }
@@ -567,6 +735,11 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (!['session', 'combat', 'paused'].includes(campaign.phase)) {
+      sendJson(request, response, 403, { error: 'A sessao ainda nao foi iniciada pelo GM.' });
+      return;
+    }
+
     const body = await readBody(request);
     const nick = String(body.nick || '').trim();
     const password = String(body.password || '');
@@ -703,7 +876,7 @@ async function handleRequest(request, response) {
     const current = toEntity(entityRow);
     const nextSessionState = {
       ...current.sessionState,
-      ...(body.sessionState && typeof body.sessionState === 'object' ? body.sessionState : {})
+      ...normalizeSessionStatePatch(body)
     };
     const timestamp = now();
 
@@ -716,6 +889,118 @@ async function handleRequest(request, response) {
       entity: sanitizeEntityForLobby(updatedEntity, participant.id)
     });
     broadcastLobby(participant.campaign_id);
+    return;
+  }
+
+  const lobbyInitiativeMatch = path.match(/^\/api\/lobby\/participants\/([^/]+)\/initiative$/);
+
+  if (lobbyInitiativeMatch && method === 'POST') {
+    const participant = getLobbyParticipantFromRequest(request, lobbyInitiativeMatch[1]);
+
+    if (!participant) {
+      sendJson(request, response, 401, { error: 'Sessao de lobby invalida.' });
+      return;
+    }
+
+    const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(participant.campaign_id);
+
+    if (!campaign || campaign.phase !== 'combat') {
+      sendJson(request, response, 403, { error: 'Iniciativa so pode ser enviada no Modo Combate.' });
+      return;
+    }
+
+    if (!campaign.active_combat_id) {
+      sendJson(request, response, 403, { error: 'Nenhum combate ativo.' });
+      return;
+    }
+
+    const activeCombat = db
+      .prepare('SELECT * FROM combat_sessions WHERE id = ? AND campaign_id = ?')
+      .get(campaign.active_combat_id, campaign.id);
+
+    if (!activeCombat) {
+      sendJson(request, response, 404, { error: 'Combate ativo nao encontrado.' });
+      return;
+    }
+
+    const combatEntityIds = activeCombat.participant_entity_ids_json ? JSON.parse(activeCombat.participant_entity_ids_json) : [];
+
+    const body = await readBody(request);
+    const entityId = String(body.entityId || '');
+    const value = Number(body.value);
+
+    if (!Number.isFinite(value)) {
+      sendJson(request, response, 400, { error: 'Informe um valor de iniciativa.' });
+      return;
+    }
+
+    let entityName = String(body.entityName || '');
+
+    if (entityId) {
+      const assignment = db
+        .prepare('SELECT * FROM entity_assignments WHERE participant_id = ? AND entity_id = ?')
+        .get(participant.id, entityId);
+
+      if (!assignment) {
+        sendJson(request, response, 403, { error: 'Ficha nao designada para este jogador.' });
+        return;
+      }
+
+      const entity = db.prepare('SELECT * FROM entities WHERE id = ? AND campaign_id = ?').get(entityId, campaign.id);
+
+      if (!entity) {
+        sendJson(request, response, 404, { error: 'Ficha nao encontrada.' });
+        return;
+      }
+
+      if (!combatEntityIds.includes(entityId)) {
+        sendJson(request, response, 403, { error: 'Ficha fora do combate ativo.' });
+        return;
+      }
+
+      entityName = toEntity(entity).baseState.name;
+    }
+
+    const timestamp = now();
+    const initiativeEntityId = entityId || null;
+
+    db.prepare(`
+      DELETE FROM combat_initiatives
+      WHERE campaign_id = ?
+        AND combat_id = ?
+        AND participant_id = ?
+        AND (
+          (? IS NULL AND entity_id IS NULL)
+          OR entity_id = ?
+        )
+    `).run(campaign.id, activeCombat.id, participant.id, initiativeEntityId, initiativeEntityId);
+
+    db.prepare(`
+      INSERT OR REPLACE INTO combat_initiatives (
+        id, campaign_id, combat_id, participant_id, entity_id, participant_nick, entity_name, value, note, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      crypto.randomUUID(),
+      campaign.id,
+      activeCombat.id,
+      participant.id,
+      initiativeEntityId,
+      participant.nick,
+      entityName,
+      Math.trunc(value),
+      String(body.note || ''),
+      timestamp,
+      timestamp
+    );
+
+    const initiatives = db
+      .prepare('SELECT * FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ? AND participant_id = ? ORDER BY value DESC, updated_at ASC')
+      .all(campaign.id, activeCombat.id, participant.id)
+      .map(toCombatInitiative);
+
+    sendJson(request, response, 200, { initiatives });
+    broadcastLobby(campaign.id);
     return;
   }
 
@@ -750,14 +1035,15 @@ async function handleRequest(request, response) {
       systemKey: String(body.systemKey || 'custom'),
       settings: normalizeCampaignSettings(body.settings, String(body.systemKey || 'custom')),
       phase: 'planning',
+      activeCombatId: String(body.activeCombatId || ''),
       activeCombatName: String(body.activeCombatName || ''),
       createdAt: timestamp,
       updatedAt: timestamp
     };
 
     db.prepare(`
-      INSERT INTO campaigns (id, owner_user_id, name, system_key, settings_json, phase, active_combat_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO campaigns (id, owner_user_id, name, system_key, settings_json, phase, active_combat_id, active_combat_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       campaign.id,
       campaign.ownerUserId,
@@ -765,6 +1051,7 @@ async function handleRequest(request, response) {
       campaign.systemKey,
       JSON.stringify(campaign.settings),
       campaign.phase,
+      campaign.activeCombatId,
       campaign.activeCombatName,
       campaign.createdAt,
       campaign.updatedAt
@@ -799,19 +1086,21 @@ async function handleRequest(request, response) {
       systemKey: requestedSystemKey,
       settings: nextSettings,
       phase: String(body.phase ?? campaign.phase),
+      activeCombatId: String(body.activeCombatId ?? campaign.active_combat_id),
       activeCombatName: String(body.activeCombatName ?? campaign.active_combat_name),
       updatedAt: now()
     };
 
     db.prepare(`
       UPDATE campaigns
-      SET name = ?, system_key = ?, settings_json = ?, phase = ?, active_combat_name = ?, updated_at = ?
+      SET name = ?, system_key = ?, settings_json = ?, phase = ?, active_combat_id = ?, active_combat_name = ?, updated_at = ?
       WHERE id = ?
     `).run(
       next.name,
       next.systemKey,
       JSON.stringify(next.settings),
       next.phase,
+      next.activeCombatId,
       next.activeCombatName,
       next.updatedAt,
       campaign.id
@@ -835,6 +1124,150 @@ async function handleRequest(request, response) {
 
     db.prepare('DELETE FROM campaigns WHERE id = ?').run(campaign.id);
     sendJson(request, response, 200, { ok: true });
+    return;
+  }
+
+  const campaignSessionRunsMatch = path.match(/^\/api\/campaigns\/([^/]+)\/session-runs$/);
+
+  if (campaignSessionRunsMatch && method === 'GET') {
+    const campaign = campaignCanBeManagedByUser(campaignSessionRunsMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const sessionRuns = db
+      .prepare('SELECT * FROM session_runs WHERE campaign_id = ? ORDER BY started_at DESC')
+      .all(campaign.id)
+      .map(toSessionRun);
+
+    sendJson(request, response, 200, { sessionRuns });
+    return;
+  }
+
+  const campaignSessionStartMatch = path.match(/^\/api\/campaigns\/([^/]+)\/session-runs\/start$/);
+
+  if (campaignSessionStartMatch && method === 'POST') {
+    const campaign = campaignCanBeManagedByUser(campaignSessionStartMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const body = await readBody(request);
+    const requestedSessionRunId = String(body.sessionRunId || '');
+    let row = requestedSessionRunId
+      ? db.prepare('SELECT * FROM session_runs WHERE id = ? AND campaign_id = ?').get(requestedSessionRunId, campaign.id)
+      : getActiveSessionRun(campaign.id);
+    const timestamp = now();
+
+    if (row) {
+      db.prepare(`
+        UPDATE session_runs
+        SET status = 'active', ended_at = '', updated_at = ?
+        WHERE id = ?
+      `).run(timestamp, row.id);
+    } else {
+      row = createSessionRun(campaign.id);
+    }
+
+    db.prepare("UPDATE campaigns SET phase = 'session', updated_at = ? WHERE id = ?")
+      .run(timestamp, campaign.id);
+
+    const sessionRun = toSessionRun(db.prepare('SELECT * FROM session_runs WHERE id = ?').get(row.id));
+    const updatedCampaign = toCampaign(db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign.id));
+
+    sendJson(request, response, 200, { sessionRun, campaign: updatedCampaign });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
+  const campaignSessionEndMatch = path.match(/^\/api\/campaigns\/([^/]+)\/session-runs\/end$/);
+
+  if (campaignSessionEndMatch && method === 'POST') {
+    const campaign = campaignCanBeManagedByUser(campaignSessionEndMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const activeRun = getActiveSessionRun(campaign.id);
+    const timestamp = now();
+
+    if (activeRun) {
+      db.prepare(`
+        UPDATE session_runs
+        SET status = 'ended', ended_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(timestamp, timestamp, activeRun.id);
+    }
+
+    db.prepare(`
+      UPDATE combat_sessions
+      SET status = 'ended', updated_at = ?
+      WHERE campaign_id = ? AND status != 'ended'
+    `).run(timestamp, campaign.id);
+
+    db.prepare(`
+      UPDATE campaigns
+      SET phase = 'paused', active_combat_id = '', active_combat_name = '', updated_at = ?
+      WHERE id = ?
+    `).run(timestamp, campaign.id);
+
+    const updatedCampaign = toCampaign(db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign.id));
+    const sessionRun = activeRun
+      ? toSessionRun(db.prepare('SELECT * FROM session_runs WHERE id = ?').get(activeRun.id))
+      : null;
+
+    sendJson(request, response, 200, { ok: true, sessionRun, campaign: updatedCampaign });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
+  const sessionRunMatch = path.match(/^\/api\/session-runs\/([^/]+)$/);
+
+  if (sessionRunMatch && method === 'PATCH') {
+    const row = db.prepare('SELECT * FROM session_runs WHERE id = ?').get(sessionRunMatch[1]);
+
+    if (!row) {
+      sendJson(request, response, 404, { error: 'Sessao nao encontrada.' });
+      return;
+    }
+
+    const campaign = campaignCanBeManagedByUser(row.campaign_id, user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const body = await readBody(request);
+    const status = String(body.status || row.status);
+    const timestamp = now();
+    const endedAt = status === 'ended' ? timestamp : '';
+
+    db.prepare(`
+      UPDATE session_runs
+      SET status = ?, ended_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(status, endedAt, timestamp, row.id);
+
+    if (status === 'ended') {
+      db.prepare(`
+        UPDATE campaigns
+        SET phase = 'paused', active_combat_id = '', active_combat_name = '', updated_at = ?
+        WHERE id = ?
+      `).run(timestamp, campaign.id);
+    }
+
+    const sessionRun = toSessionRun(db.prepare('SELECT * FROM session_runs WHERE id = ?').get(row.id));
+    const updatedCampaign = toCampaign(db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign.id));
+
+    sendJson(request, response, 200, { sessionRun, campaign: updatedCampaign });
+    broadcastLobby(campaign.id);
     return;
   }
 
@@ -1070,6 +1503,188 @@ async function handleRequest(request, response) {
     return;
   }
 
+  const campaignCombatsMatch = path.match(/^\/api\/campaigns\/([^/]+)\/combats$/);
+
+  if (campaignCombatsMatch && method === 'GET') {
+    const campaign = campaignCanBeManagedByUser(campaignCombatsMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const combats = db
+      .prepare('SELECT * FROM combat_sessions WHERE campaign_id = ? ORDER BY updated_at DESC')
+      .all(campaign.id)
+      .map(toCombatSession);
+
+    sendJson(request, response, 200, { combats });
+    return;
+  }
+
+  if (campaignCombatsMatch && method === 'POST') {
+    const campaign = campaignCanBeManagedByUser(campaignCombatsMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const body = await readBody(request);
+    const entityIds = Array.isArray(body.entityIds) ? body.entityIds.map(String) : [];
+
+    if (entityIds.length === 0) {
+      sendJson(request, response, 400, { error: 'Escolha ao menos uma ficha para o combate.' });
+      return;
+    }
+
+    const validEntityIds = new Set(db
+      .prepare("SELECT id FROM entities WHERE campaign_id = ? AND type <> 'Ability'")
+      .all(campaign.id)
+      .map((row) => row.id));
+    const participantEntityIds = entityIds.filter((id) => validEntityIds.has(id));
+
+    if (participantEntityIds.length === 0) {
+      sendJson(request, response, 400, { error: 'Nenhuma ficha valida selecionada.' });
+      return;
+    }
+
+    const timestamp = now();
+    const activeSessionRun = getActiveSessionRun(campaign.id);
+    const combat = {
+      id: crypto.randomUUID(),
+      campaignId: campaign.id,
+      sessionRunId: activeSessionRun?.id || '',
+      name: String(body.name || 'Combate'),
+      status: 'collectingInitiative',
+      participantEntityIds,
+      currentTurnIndex: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    db.prepare(`
+      INSERT INTO combat_sessions (
+        id, campaign_id, session_run_id, name, status, participant_entity_ids_json, turn_order_entity_ids_json, current_turn_index, round_number, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      combat.id,
+      combat.campaignId,
+      combat.sessionRunId,
+      combat.name,
+      combat.status,
+      JSON.stringify(combat.participantEntityIds),
+      JSON.stringify([]),
+      combat.currentTurnIndex,
+      1,
+      combat.createdAt,
+      combat.updatedAt
+    );
+
+    db.prepare(`
+      UPDATE campaigns
+      SET phase = 'combat', active_combat_id = ?, active_combat_name = ?, updated_at = ?
+      WHERE id = ?
+    `).run(combat.id, combat.name, timestamp, campaign.id);
+
+    sendJson(request, response, 201, {
+      combat,
+      campaign: toCampaign(db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign.id))
+    });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
+  const combatMatch = path.match(/^\/api\/combats\/([^/]+)$/);
+
+  if (combatMatch && method === 'PATCH') {
+    const row = db.prepare('SELECT * FROM combat_sessions WHERE id = ?').get(combatMatch[1]);
+
+    if (!row) {
+      sendJson(request, response, 404, { error: 'Combate nao encontrado.' });
+      return;
+    }
+
+    const campaign = campaignCanBeManagedByUser(row.campaign_id, user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const body = await readBody(request);
+    const current = toCombatSession(row);
+    const entityIds = Array.isArray(body.entityIds)
+      ? body.entityIds.map(String)
+      : current.participantEntityIds;
+    const turnOrderEntityIds = Array.isArray(body.turnOrderEntityIds)
+      ? body.turnOrderEntityIds.map(String).filter((id) => entityIds.includes(id))
+      : current.turnOrderEntityIds;
+    const timestamp = now();
+
+    db.prepare(`
+      UPDATE combat_sessions
+      SET name = ?, status = ?, participant_entity_ids_json = ?, turn_order_entity_ids_json = ?, current_turn_index = ?, round_number = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      String(body.name ?? current.name),
+      String(body.status ?? current.status),
+      JSON.stringify(entityIds),
+      JSON.stringify(turnOrderEntityIds),
+      Number(body.currentTurnIndex ?? current.currentTurnIndex),
+      Math.max(1, Number(body.roundNumber ?? current.roundNumber ?? 1)),
+      timestamp,
+      current.id
+    );
+
+    const combat = toCombatSession(db.prepare('SELECT * FROM combat_sessions WHERE id = ?').get(current.id));
+    sendJson(request, response, 200, { combat });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
+  const combatTurnOrderMatch = path.match(/^\/api\/combats\/([^/]+)\/turn-order$/);
+
+  if (combatTurnOrderMatch && method === 'POST') {
+    const row = db.prepare('SELECT * FROM combat_sessions WHERE id = ?').get(combatTurnOrderMatch[1]);
+
+    if (!row) {
+      sendJson(request, response, 404, { error: 'Combate nao encontrado.' });
+      return;
+    }
+
+    const campaign = campaignCanBeManagedByUser(row.campaign_id, user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const combat = toCombatSession(row);
+    const initiatives = db
+      .prepare('SELECT * FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ? ORDER BY value DESC, updated_at ASC')
+      .all(campaign.id, combat.id)
+      .map(toCombatInitiative);
+    const initiativeEntityIds = Array.from(new Set(initiatives
+      .map((initiative) => initiative.entityId)
+      .filter((entityId) => entityId && combat.participantEntityIds.includes(entityId))));
+    const remainingEntityIds = combat.participantEntityIds.filter((entityId) => !initiativeEntityIds.includes(entityId));
+    const turnOrderEntityIds = [...initiativeEntityIds, ...remainingEntityIds];
+    const timestamp = now();
+
+    db.prepare(`
+      UPDATE combat_sessions
+      SET status = 'active', turn_order_entity_ids_json = ?, current_turn_index = 0, round_number = 1, updated_at = ?
+      WHERE id = ?
+    `).run(JSON.stringify(turnOrderEntityIds), timestamp, combat.id);
+
+    const updatedCombat = toCombatSession(db.prepare('SELECT * FROM combat_sessions WHERE id = ?').get(combat.id));
+    sendJson(request, response, 200, { combat: updatedCombat });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
   const campaignLogsMatch = path.match(/^\/api\/campaigns\/([^/]+)\/combat-logs$/);
 
   if (campaignLogsMatch && method === 'GET') {
@@ -1080,11 +1695,134 @@ async function handleRequest(request, response) {
       return;
     }
 
-    const logs = db
-      .prepare('SELECT * FROM combat_logs WHERE campaign_id = ? ORDER BY created_at DESC LIMIT 100')
-      .all(campaign.id)
+    const sessionRunId = routeUrl(request).searchParams.get('sessionRunId') || '';
+    const logs = sessionRunId
+      ? db
+        .prepare('SELECT * FROM combat_logs WHERE campaign_id = ? AND session_run_id = ? ORDER BY created_at DESC LIMIT 100')
+        .all(campaign.id, sessionRunId)
+      : db
+        .prepare('SELECT * FROM combat_logs WHERE campaign_id = ? ORDER BY created_at DESC LIMIT 100')
+        .all(campaign.id);
+
+    const mappedLogs = logs
       .map(toCombatLog);
-    sendJson(request, response, 200, { logs });
+    sendJson(request, response, 200, { logs: mappedLogs });
+    return;
+  }
+
+  const campaignInitiativesMatch = path.match(/^\/api\/campaigns\/([^/]+)\/combat\/initiatives$/);
+
+  if (campaignInitiativesMatch && method === 'GET') {
+    const campaign = campaignCanBeManagedByUser(campaignInitiativesMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    const initiatives = db
+      .prepare('SELECT * FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ? ORDER BY value DESC, updated_at ASC')
+      .all(campaign.id, campaign.active_combat_id || '')
+      .map(toCombatInitiative);
+
+    sendJson(request, response, 200, { initiatives });
+    return;
+  }
+
+  if (campaignInitiativesMatch && method === 'POST') {
+    const campaign = campaignCanBeManagedByUser(campaignInitiativesMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    if (!campaign.active_combat_id) {
+      sendJson(request, response, 403, { error: 'Nenhum combate ativo.' });
+      return;
+    }
+
+    const activeCombat = db
+      .prepare('SELECT * FROM combat_sessions WHERE id = ? AND campaign_id = ?')
+      .get(campaign.active_combat_id, campaign.id);
+
+    if (!activeCombat) {
+      sendJson(request, response, 404, { error: 'Combate ativo nao encontrado.' });
+      return;
+    }
+
+    const body = await readBody(request);
+    const entityId = String(body.entityId || '');
+    const value = Number(body.value);
+
+    if (!entityId || !Number.isFinite(value)) {
+      sendJson(request, response, 400, { error: 'Informe ficha e valor de iniciativa.' });
+      return;
+    }
+
+    const combatEntityIds = activeCombat.participant_entity_ids_json ? JSON.parse(activeCombat.participant_entity_ids_json) : [];
+
+    if (!combatEntityIds.includes(entityId)) {
+      sendJson(request, response, 403, { error: 'Ficha fora do combate ativo.' });
+      return;
+    }
+
+    const entity = db.prepare('SELECT * FROM entities WHERE id = ? AND campaign_id = ?').get(entityId, campaign.id);
+
+    if (!entity) {
+      sendJson(request, response, 404, { error: 'Ficha nao encontrada.' });
+      return;
+    }
+
+    const gmParticipant = getOrCreateGmLobbyParticipant(campaign.id, user);
+    const timestamp = now();
+
+    db.prepare(`
+      DELETE FROM combat_initiatives
+      WHERE campaign_id = ? AND combat_id = ? AND participant_id = ? AND entity_id = ?
+    `).run(campaign.id, activeCombat.id, gmParticipant.id, entityId);
+
+    db.prepare(`
+      INSERT OR REPLACE INTO combat_initiatives (
+        id, campaign_id, combat_id, participant_id, entity_id, participant_nick, entity_name, value, note, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      crypto.randomUUID(),
+      campaign.id,
+      activeCombat.id,
+      gmParticipant.id,
+      entityId,
+      'GM',
+      toEntity(entity).baseState.name,
+      Math.trunc(value),
+      String(body.note || ''),
+      timestamp,
+      timestamp
+    );
+
+    const initiatives = db
+      .prepare('SELECT * FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ? ORDER BY value DESC, updated_at ASC')
+      .all(campaign.id, activeCombat.id)
+      .map(toCombatInitiative);
+
+    sendJson(request, response, 200, { initiatives });
+    broadcastLobby(campaign.id);
+    return;
+  }
+
+  if (campaignInitiativesMatch && method === 'DELETE') {
+    const campaign = campaignCanBeManagedByUser(campaignInitiativesMatch[1], user.id);
+
+    if (!campaign) {
+      sendJson(request, response, 404, { error: 'Campanha nao encontrada.' });
+      return;
+    }
+
+    db.prepare('DELETE FROM combat_initiatives WHERE campaign_id = ? AND combat_id = ?')
+      .run(campaign.id, campaign.active_combat_id || '');
+    sendJson(request, response, 200, { ok: true });
+    broadcastLobby(campaign.id);
     return;
   }
 
@@ -1098,6 +1836,7 @@ async function handleRequest(request, response) {
 
     const body = await readBody(request);
     const log = normalizeCombatLogBody(body);
+    const activeSessionRun = getActiveSessionRun(campaign.id);
     const entity = db.prepare('SELECT id FROM entities WHERE id = ? AND campaign_id = ?').get(log.entityId, campaign.id);
 
     if (!entity) {
@@ -1107,13 +1846,14 @@ async function handleRequest(request, response) {
 
     db.prepare(`
       INSERT INTO combat_logs (
-        id, campaign_id, entity_id, entity_name, action, requested_amount, final_amount,
+        id, campaign_id, session_run_id, entity_id, entity_name, action, requested_amount, final_amount,
         damage_type, hp_before, hp_after, note, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       log.id,
       campaign.id,
+      activeSessionRun?.id || '',
       log.entityId,
       log.entityName,
       log.action,

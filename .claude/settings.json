@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node server.js)",
+      "Bash(npx ng *)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"test1234\"}')",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)",
+      "Bash(wmic process *)"
+    ]
+  }
+}

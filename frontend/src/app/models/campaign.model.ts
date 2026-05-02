@@ -1,4 +1,4 @@
-import { Entity, EntityType } from './entity.model';
+import { Entity, EntitySessionState, EntityType } from './entity.model';
 
 export type CampaignSystem = 'custom' | 'dnd5.5';
 export type CampaignPhase = 'planning' | 'session' | 'combat' | 'paused';
@@ -15,6 +15,33 @@ export interface EncounterConfig {
   id: string;
   name: string;
   notes: string;
+  entityIds?: string[];
+  roundCounters?: RoundCounterConfig[];
+  board?: {
+    width: number;
+    height: number;
+    visibility: 'gmOnly' | 'public';
+    positions: Record<string, { x: number; y: number }>;
+  };
+}
+
+export interface RoundCounterConfig {
+  id: string;
+  name: string;
+  rounds: number;
+  visibility: 'gmOnly' | 'public';
+}
+
+export interface SessionConfig {
+  id: string;
+  name: string;
+  notes: string;
+  entityIds?: string[];
+  loreNodeIds?: string[];
+  lobbyPasswordConfigured?: boolean;
+  lastLobbySummary?: string;
+  lastLobbyRunId?: string;
+  encounters: EncounterConfig[];
 }
 
 export type TemplateFieldType = 'text' | 'select' | 'table';
@@ -38,6 +65,9 @@ export interface LoreNodeConfig {
   title: string;
   text: string;
   imageUrl: string;
+  publishedToLobby?: boolean;
+  isPublishedToLobby?: boolean;
+  visibleToParticipantIds?: string[];
   x: number;
   y: number;
 }
@@ -65,19 +95,78 @@ export interface LobbyParticipant {
   lastSeenAt: string;
 }
 
+export interface LobbyEntity extends Omit<Entity, 'baseState' | 'sessionState'> {
+  canEditSession: boolean;
+  baseState: Partial<Entity['baseState']> & {
+    name?: string;
+    maxHp?: number;
+    imageUrl?: string;
+  };
+  sessionState: EntitySessionState | null;
+}
+
+export interface CombatInitiative {
+  id: string;
+  campaignId: string;
+  combatId: string;
+  participantId: string;
+  entityId: string;
+  participantNick: string;
+  entityName: string;
+  value: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CombatSession {
+  id: string;
+  campaignId: string;
+  sessionRunId: string;
+  name: string;
+  status: 'collectingInitiative' | 'active' | 'ended' | string;
+  participantEntityIds: string[];
+  turnOrderEntityIds: string[];
+  currentTurnIndex: number;
+  roundNumber: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SessionRun {
+  id: string;
+  campaignId: string;
+  status: 'active' | 'ended' | string;
+  startedAt: string;
+  endedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LobbyState {
   participant: LobbyParticipant;
   campaign: {
     id: string;
     name: string;
     phase: CampaignPhase;
+    activeCombatId: string;
     activeCombatName: string;
   };
-  entities: Entity[];
+  activeCombat: CombatSession | null;
+  entities: LobbyEntity[];
   lore: {
     loreNodes: LoreNodeConfig[];
     loreLinks: LoreLinkConfig[];
   };
+  publicBoard: {
+    encounterId: string;
+    encounterName: string;
+    width: number;
+    height: number;
+    positions: Record<string, { x: number; y: number }>;
+    roundCounters?: RoundCounterConfig[];
+  } | null;
+  initiatives: CombatInitiative[];
   serverTime: string;
 }
 
@@ -96,6 +185,7 @@ export interface CampaignSettings {
     woundedThresholdPercent: number;
   };
   encounters: EncounterConfig[];
+  sessions: SessionConfig[];
   templates: TemplateConfig[];
   loreNodes: LoreNodeConfig[];
   loreLinks: LoreLinkConfig[];
@@ -107,6 +197,7 @@ export interface Campaign {
   systemKey: CampaignSystem;
   settings: CampaignSettings;
   phase: CampaignPhase;
+  activeCombatId: string;
   activeCombatName: string;
 }
 
@@ -126,6 +217,7 @@ export function createDefaultCampaignSettings(system: CampaignSystem): CampaignS
       woundedThresholdPercent: 5
     },
     encounters: [],
+    sessions: [],
     templates: [],
     loreNodes: [],
     loreLinks: []
@@ -170,6 +262,17 @@ export function createDefaultCampaignSettings(system: CampaignSystem): CampaignS
             { id: 'ca', name: 'CA', type: 'text', options: [] },
             { id: 'challenge', name: 'Desafio', type: 'text', options: [] },
             { id: 'actions', name: 'Acoes', type: 'table', options: ['Nome', 'Alcance', 'Dano', 'Efeito'] }
+          ]
+        },
+        {
+          id: 'dnd-ability',
+          name: 'Habilidade D&D 5.5',
+          entityType: 'Ability',
+          fields: [
+            { id: 'timing', name: 'Duracao', type: 'select', options: ['Instantanea', 'Por round'] },
+            { id: 'damage', name: 'Dano', type: 'text', options: [] },
+            { id: 'damageType', name: 'Tipo de dano', type: 'select', options: ['Acido', 'Concusao', 'Frio', 'Fogo', 'Energia', 'Eletrico', 'Necrotico', 'Perfurante', 'Veneno', 'Psiquico', 'Radiante', 'Cortante', 'Trovao'] },
+            { id: 'rounds', name: 'Rounds ativos', type: 'text', options: [] }
           ]
         }
       ]
