@@ -25,3 +25,8 @@ textarea {
 button {
   cursor: pointer;
 }
+
+/* Tailwind utilities — preflight disabled para não conflitar com o CSS existente */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

@@ -1,0 +1,55 @@
+<div class="flex flex-col h-full rounded-panel bg-wood-800 border border-leather-700 shadow-panel overflow-hidden">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-4 py-2.5 bg-wood-700 border-b border-leather-600 shadow-emboss shrink-0">
+    <h2 class="text-[10px] font-bold tracking-widest uppercase text-parchment-400">Jogadores</h2>
+    <span class="text-[10px] text-parchment-500">{{ players.length }} PCs</span>
+  </div>
+
+  <!-- Player list -->
+  <ul class="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0">
+    @for (player of players; track player.id) {
+      <li
+        class="px-3 py-2 rounded-card border bg-wood-900 border-leather-700 shadow-card"
+        [class.border-gold-600]="player.isActive"
+        [class.shadow-active-turn]="player.isActive"
+      >
+        <div class="flex items-center justify-between mb-1.5">
+          <!-- Name -->
+          <span class="text-sm font-semibold text-parchment-200 truncate mr-2">{{ player.name }}</span>
+
+          <!-- HP numbers + AC -->
+          <div class="flex items-center gap-2 shrink-0">
+            @if (player.ac) {
+              <span class="text-[10px] text-parchment-500">CA <strong class="text-parchment-300">{{ player.ac }}</strong></span>
+            }
+            <span
+              class="text-sm font-bold tabular-nums"
+              [class]="hpTextClass(player.currentHp, player.maxHp)"
+              [class.shadow-hp-crit]="player.currentHp <= 0"
+            >{{ player.currentHp }}</span>
+            <span class="text-[10px] text-leather-500">/{{ player.maxHp }}</span>
+          </div>
+        </div>
+
+        <!-- HP bar -->
+        <div class="h-2 bg-wood-950 rounded-full overflow-hidden shadow-panel-inset">
+          <div
+            class="h-full rounded-full transition-all duration-500"
+            [class]="hpBarClass(player.currentHp, player.maxHp)"
+            [style.width]="hpPct(player.currentHp, player.maxHp) + '%'"
+          ></div>
+        </div>
+
+        <!-- Conditions -->
+        @if (player.conditions?.length) {
+          <div class="flex flex-wrap gap-1 mt-1.5">
+            @for (cond of player.conditions; track cond) {
+              <span class="text-[9px] px-1.5 py-0.5 rounded bg-leather-600 text-parchment-400 uppercase tracking-wide">{{ cond }}</span>
+            }
+          </div>
+        }
+      </li>
+    }
+  </ul>
+</div>

@@ -1,0 +1,59 @@
+<div class="flex flex-col h-full rounded-panel bg-wood-800 border border-leather-700 shadow-panel overflow-hidden">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-4 py-2.5 bg-wood-700 border-b border-leather-600 shadow-emboss shrink-0">
+    <h2 class="text-[10px] font-bold tracking-widest uppercase text-parchment-400">Iniciativa</h2>
+    <span class="text-xs font-bold text-gold-400 tabular-nums">Rodada {{ round }}</span>
+  </div>
+
+  <!-- Entry list -->
+  <ol class="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0">
+    @for (entry of entries; track entry.id; let i = $index) {
+      <li
+        class="flex items-center gap-2 px-3 py-2 rounded-card border transition-all duration-200"
+        [class.border-gold-500]="entry.isCurrentTurn"
+        [class.shadow-active-turn]="entry.isCurrentTurn"
+        [class.bg-wood-700]="entry.isCurrentTurn"
+        [class.border-leather-700]="!entry.isCurrentTurn"
+        [class.bg-wood-900]="!entry.isCurrentTurn"
+      >
+        <!-- Initiative number -->
+        <span
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+          [class.bg-gold-500]="entry.isCurrentTurn"
+          [class.text-wood-900]="entry.isCurrentTurn"
+          [class.bg-wood-700]="!entry.isCurrentTurn"
+          [class.text-parchment-300]="!entry.isCurrentTurn"
+        >{{ entry.initiative }}</span>
+
+        <!-- Name + HP bar -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-1.5 mb-0.5">
+            <span class="text-sm font-medium truncate" [class.text-parchment-100]="entry.isCurrentTurn" [class.text-parchment-300]="!entry.isCurrentTurn">
+              {{ entry.name }}
+            </span>
+            @if (!entry.isPlayer) {
+              <span class="text-[9px] px-1 py-0.5 rounded bg-leather-600 text-parchment-400 uppercase tracking-wide shrink-0">npc</span>
+            }
+          </div>
+          @if (entry.hpCurrent !== undefined && entry.hpMax) {
+            <div class="h-1 bg-wood-950 rounded-full overflow-hidden shadow-panel-inset">
+              <div
+                class="h-full rounded-full transition-all duration-500"
+                [class]="hpBarClass(entry.hpCurrent, entry.hpMax)"
+                [style.width]="hpPct(entry.hpCurrent, entry.hpMax) + '%'"
+              ></div>
+            </div>
+          }
+        </div>
+
+        <!-- Turn indicator -->
+        @if (entry.isCurrentTurn) {
+          <span class="w-1.5 h-1.5 rounded-full bg-gold-400 shrink-0 animate-pulse"></span>
+        } @else {
+          <span class="text-[10px] text-leather-500 tabular-nums w-4 text-center shrink-0">{{ i + 1 }}</span>
+        }
+      </li>
+    }
+  </ol>
+</div>

@@ -1,0 +1,37 @@
+<div class="flex flex-col h-full rounded-panel bg-wood-800 border border-leather-700 shadow-panel overflow-hidden">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-4 py-2.5 bg-wood-700 border-b border-leather-600 shadow-emboss shrink-0">
+    <h2 class="text-[10px] font-bold tracking-widest uppercase text-parchment-400">Board Tático</h2>
+    <span class="text-[10px] text-parchment-500">{{ _rows() }}×{{ _cols() }}</span>
+  </div>
+
+  <!-- Grid area -->
+  <div class="flex-1 min-h-0 p-3 overflow-auto bg-wood-950 shadow-panel-inset">
+    <div
+      class="grid gap-px h-full"
+      [style.grid-template-columns]="colsStyle()"
+    >
+      @for (cell of cells(); track trackCell($index, cell)) {
+        <div
+          class="relative aspect-square rounded-sm border border-leather-700/40 hover:border-leather-500 hover:bg-wood-700 transition-colors duration-100 cursor-pointer"
+          [class.bg-wood-900]="!cell.token"
+          [class.bg-wood-800]="!!cell.token"
+        >
+          @if (cell.token) {
+            <div
+              class="absolute inset-[2px] rounded-sm flex items-center justify-center text-[9px] font-bold leading-none"
+              [class.bg-blue-700]="cell.token.isPlayer"
+              [class.text-blue-100]="cell.token.isPlayer"
+              [class.bg-red-900]="!cell.token.isPlayer"
+              [class.text-red-200]="!cell.token.isPlayer"
+              [title]="cell.token.label"
+            >
+              {{ cell.token.label.slice(0, 2).toUpperCase() }}
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </div>
+</div>

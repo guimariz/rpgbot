@@ -593,6 +593,12 @@
         <button class="nav-item" [class.active]="workspaceView() === 'lore'" type="button" (click)="setWorkspaceView('lore')">Lore</button>
       </nav>
 
+      @if (workspaceView() === 'dashboard') {
+        <button class="reset-button" type="button" (click)="showNewDashboard.set(!showNewDashboard())" style="font-size:11px;opacity:0.7">
+          {{ showNewDashboard() ? '← Design Original' : '🧪 Testar Novo Design' }}
+        </button>
+      }
+
       <button class="reset-button" type="button" (click)="backToCampaigns()">Trocar campanha</button>
       <button class="reset-button" type="button" (click)="logout()">Sair</button>
     </aside>
@@ -636,6 +642,11 @@
       }
 
       @if (workspaceView() === 'dashboard') {
+
+      @if (showNewDashboard()) {
+        <app-dashboard-v2 />
+      } @else {
+
       <section class="campaign-session-board">
         <section class="panel session-directory" aria-label="Sessoes da campanha">
           <div class="panel-heading">
@@ -854,7 +865,9 @@
             }
           </section>
         </section>
-      }
+
+      } <!-- /else showNewDashboard -->
+      } <!-- /workspaceView dashboard -->
 
       } @else if (workspaceView() === 'library') {
         <section class="library-grid">

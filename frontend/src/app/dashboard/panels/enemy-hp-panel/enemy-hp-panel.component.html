@@ -1,0 +1,64 @@
+<div class="flex flex-col h-full rounded-panel bg-wood-800 border border-leather-700 shadow-panel overflow-hidden">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-4 py-2.5 bg-wood-700 border-b border-leather-600 shadow-emboss shrink-0">
+    <h2 class="text-[10px] font-bold tracking-widest uppercase text-parchment-400">Inimigos / NPCs</h2>
+    <span class="text-[10px] text-parchment-500">{{ aliveCount() }}/{{ enemies.length }} vivos</span>
+  </div>
+
+  <!-- Enemy list -->
+  <ul class="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0">
+    @for (enemy of enemies; track enemy.id) {
+      <li
+        class="px-3 py-2 rounded-card border shadow-card transition-opacity duration-300"
+        [class.bg-wood-900]="enemy.isAlive"
+        [class.border-leather-700]="enemy.isAlive"
+        [class.bg-wood-950]="!enemy.isAlive"
+        [class.border-leather-700]="!enemy.isAlive"
+        [class.opacity-40]="!enemy.isAlive"
+      >
+        <div class="flex items-center justify-between mb-1.5">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <!-- Dead indicator -->
+            @if (!enemy.isAlive) {
+              <span class="text-[9px] text-hp-dead">✕</span>
+            }
+            <span
+              class="text-sm font-semibold truncate"
+              [class.text-parchment-200]="enemy.isAlive"
+              [class.text-leather-500]="!enemy.isAlive"
+            >{{ enemy.name }}</span>
+          </div>
+
+          <!-- HP numbers -->
+          @if (enemy.isAlive) {
+            <div class="flex items-center gap-1 shrink-0 ml-2">
+              <span class="text-sm font-bold tabular-nums text-hp-crit">{{ enemy.currentHp }}</span>
+              <span class="text-[10px] text-leather-500">/{{ enemy.maxHp }}</span>
+            </div>
+          }
+        </div>
+
+        <!-- HP bar -->
+        @if (enemy.isAlive) {
+          <div class="h-2 bg-wood-950 rounded-full overflow-hidden shadow-panel-inset">
+            <div
+              class="h-full rounded-full transition-all duration-500"
+              [class]="hpBarClass(enemy.currentHp, enemy.maxHp)"
+              [style.width]="hpPct(enemy.currentHp, enemy.maxHp) + '%'"
+            ></div>
+          </div>
+        }
+
+        <!-- Conditions -->
+        @if (enemy.conditions?.length && enemy.isAlive) {
+          <div class="flex flex-wrap gap-1 mt-1.5">
+            @for (cond of enemy.conditions; track cond) {
+              <span class="text-[9px] px-1.5 py-0.5 rounded bg-leather-600 text-parchment-400 uppercase tracking-wide">{{ cond }}</span>
+            }
+          </div>
+        }
+      </li>
+    }
+  </ul>
+</div>

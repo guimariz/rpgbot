@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
+import { DashboardComponent } from './dashboard/dashboard.component';
 import { ApiClientService } from './core/api-client.service';
 import { Campaign, CampaignSettings, CampaignSystem, CombatInitiative, CombatSession, createDefaultCampaignSettings, DamageTypeConfig, EncounterConfig, LobbyEntity, LobbyParticipant, LobbyRevealMode, LobbySettings, LobbyState, LoreLinkConfig, LoreNodeConfig, RoundCounterConfig, SessionConfig, SessionRun, TemplateConfig, TemplateFieldConfig, TemplateFieldType } from './models/campaign.model';
 import { CombatLogEntry, Entity, EntitySessionState, EntityType, HpPreview, VisibilityMode } from './models/entity.model';
@@ -35,7 +36,7 @@ const loreNodeHeight = 168;
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DashboardComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -58,6 +59,7 @@ export class AppComponent {
   readonly authMessage = signal('');
   readonly campaignMessage = signal('');
   readonly workspaceView = signal<WorkspaceView>('dashboard');
+  readonly showNewDashboard = signal(false);
   readonly libraryFilter = signal<LibraryFilter>('all');
 
   readonly loginEmail = signal('');

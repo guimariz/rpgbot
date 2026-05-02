@@ -1,0 +1,24 @@
+<!-- Master Shield — Bento Grid Dashboard -->
+<div class="grid grid-cols-12 grid-rows-2 gap-3 h-screen p-3 bg-wood-950">
+
+  <!-- ① HP Jogadores (col 1-3, row 1) -->
+  <div class="col-span-3 row-span-1 min-h-0">
+    <app-player-hp-panel [players]="players" />
+  </div>
+
+  <!-- ② Board Tático (col 4-9, rows 1-2) -->
+  <div class="col-span-6 row-span-2 min-h-0">
+    <app-tactic-board-panel [rows]="10" [cols]="15" [tokens]="tokens" />
+  </div>
+
+  <!-- ③ Iniciativa (col 10-12, rows 1-2) -->
+  <div class="col-span-3 row-span-2 min-h-0">
+    <app-initiative-panel [entries]="initiatives" [round]="round" />
+  </div>
+
+  <!-- ④ HP Inimigos (col 1-3, row 2) -->
+  <div class="col-span-3 row-span-1 min-h-0">
+    <app-enemy-hp-panel [enemies]="enemies" />
+  </div>
+
+</div>
