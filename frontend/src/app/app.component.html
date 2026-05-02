@@ -102,11 +102,14 @@
         <h2>Campanhas Existentes</h2>
         @for (campaign of campaigns(); track campaign.id) {
           <article class="campaign-card">
-            <button class="campaign-card-main" type="button" (click)="selectCampaign(campaign)">
+            <div class="campaign-card-info">
               <strong>{{ campaign.name }}</strong>
               <small>{{ campaign.systemKey }} · {{ campaign.phase }}</small>
-            </button>
-            <button class="danger-button compact-button" type="button" [disabled]="isLoading()" (click)="deleteCampaign(campaign, $event)">Excluir</button>
+            </div>
+            <div class="campaign-card-actions">
+              <button class="apply-button compact-button" type="button" [disabled]="isLoading()" (click)="selectCampaign(campaign)">Entrar</button>
+              <button class="danger-button compact-button" type="button" [disabled]="isLoading()" (click)="deleteCampaign(campaign, $event)">Excluir</button>
+            </div>
           </article>
         } @empty {
           <p class="muted">Nenhuma campanha criada ainda.</p>
@@ -594,8 +597,10 @@
       </nav>
 
       @if (workspaceView() === 'dashboard') {
-        <button class="reset-button" type="button" (click)="showNewDashboard.set(!showNewDashboard())" style="font-size:11px;opacity:0.7">
-          {{ showNewDashboard() ? '← Design Original' : '🧪 Testar Novo Design' }}
+        <button class="reset-button" type="button" (click)="cycleDesign()" style="font-size:11px;opacity:0.7">
+          @if (dashboardDesign() === 'original') { 🧪 V1 Esqueumórfico }
+          @else if (dashboardDesign() === 'v1') { 🎨 V2 Modern Clean }
+          @else { ← Original }
         </button>
       }
 
@@ -643,8 +648,10 @@
 
       @if (workspaceView() === 'dashboard') {
 
-      @if (showNewDashboard()) {
+      @if (dashboardDesign() === 'v1') {
         <app-dashboard-v2 />
+      } @else if (dashboardDesign() === 'v2') {
+        <app-dashboard-modern />
       } @else {
 
       <section class="campaign-session-board">

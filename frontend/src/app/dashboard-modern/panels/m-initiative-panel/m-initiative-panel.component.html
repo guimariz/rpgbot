@@ -1,0 +1,77 @@
+<div class="flex flex-col h-full rounded-2xl bg-surface-raised border border-surface-overlay overflow-hidden">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+    <p class="text-[10px] font-semibold tracking-widest uppercase text-zinc-500">Ordem de Turno</p>
+    <span class="px-2.5 py-0.5 rounded-full bg-neon-amber/10 text-neon-amber text-xs font-bold border border-neon-amber/20">
+      Rodada {{ round }}
+    </span>
+  </div>
+
+  <!-- Entry list -->
+  <ol class="flex-1 overflow-y-auto px-3 pb-3 space-y-1 min-h-0">
+    @for (entry of entries; track entry.id; let i = $index) {
+      <li
+        class="group relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200"
+        [class.bg-neon-amber]="entry.isCurrentTurn"
+        [class.bg-opacity-5]="entry.isCurrentTurn"
+        [class.border-l-2]="entry.isCurrentTurn"
+        [class.border-neon-amber]="entry.isCurrentTurn"
+        [class.shadow-neon-amber]="entry.isCurrentTurn"
+        [class.hover:bg-zinc-800]="!entry.isCurrentTurn"
+      >
+        <!-- Initiative badge -->
+        <div
+          class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-black text-sm tabular-nums transition-colors"
+          [class.bg-neon-amber]="entry.isCurrentTurn"
+          [class.text-zinc-900]="entry.isCurrentTurn"
+          [class.bg-surface-overlay]="!entry.isCurrentTurn"
+          [class.text-zinc-400]="!entry.isCurrentTurn"
+        >{{ entry.initiative }}</div>
+
+        <!-- Name + HP bar -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1.5">
+            <span
+              class="font-semibold truncate transition-colors"
+              [class.text-zinc-100]="entry.isCurrentTurn"
+              [class.text-zinc-300]="!entry.isCurrentTurn"
+            >{{ entry.name }}</span>
+
+            @if (!entry.isPlayer) {
+              <span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-neon-violet/10 text-neon-violet border border-neon-violet/20 font-medium uppercase tracking-wide">
+                npc
+              </span>
+            } @else {
+              <span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20 font-medium uppercase tracking-wide">
+                pc
+              </span>
+            }
+          </div>
+
+          @if (entry.hpCurrent !== undefined && entry.hpMax) {
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-500"
+                  [class]="hpBarClass(entry.hpCurrent, entry.hpMax)"
+                  [style.width]="hpPct(entry.hpCurrent, entry.hpMax) + '%'"
+                ></div>
+              </div>
+              <span class="text-[10px] text-zinc-500 tabular-nums shrink-0">
+                {{ entry.hpCurrent }}/{{ entry.hpMax }}
+              </span>
+            </div>
+          }
+        </div>
+
+        <!-- Position indicator -->
+        @if (entry.isCurrentTurn) {
+          <div class="w-1.5 h-1.5 rounded-full bg-neon-amber animate-pulse shrink-0"></div>
+        } @else {
+          <span class="text-[10px] text-zinc-700 tabular-nums w-4 text-right shrink-0">{{ i + 1 }}</span>
+        }
+      </li>
+    }
+  </ol>
+</div>

@@ -45,6 +45,20 @@ const config: Config = {
           crit:  '#ef4444',
           dead:  '#4b5563',
         },
+        // Modern Clean palette
+        surface: {
+          base:    '#09090b',
+          raised:  '#18181b',
+          overlay: '#27272a',
+          border:  '#3f3f46',
+        },
+        neon: {
+          cyan:    '#22d3ee',
+          amber:   '#fbbf24',
+          rose:    '#fb7185',
+          violet:  '#a78bfa',
+          emerald: '#34d399',
+        },
       },
       boxShadow: {
         panel:        '0 4px 20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)',
@@ -53,6 +67,9 @@ const config: Config = {
         emboss:       'inset 0 1px 1px rgba(255,255,255,0.08), inset 0 -1px 1px rgba(0,0,0,0.4)',
         'active-turn':'0 0 0 2px #f59e0b, 0 0 16px rgba(245,158,11,0.35)',
         'hp-crit':    '0 0 10px rgba(239,68,68,0.5)',
+        'neon-amber': '0 0 12px rgba(251,191,36,0.4)',
+        'neon-rose':  '0 0 12px rgba(251,113,133,0.4)',
+        'neon-cyan':  '0 0 12px rgba(34,211,238,0.3)',
       },
       borderRadius: {
         panel: '10px',

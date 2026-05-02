@@ -1,0 +1,62 @@
+<div class="flex flex-col h-full rounded-2xl bg-surface-raised border border-surface-overlay overflow-hidden">
+
+  <!-- Header -->
+  <div class="px-5 pt-5 pb-2 shrink-0">
+    <p class="text-[10px] font-semibold tracking-widest uppercase text-zinc-500">Jogadores</p>
+  </div>
+
+  <!-- Player list -->
+  <ul class="flex-1 overflow-y-auto px-4 pb-4 space-y-2 min-h-0">
+    @for (player of players; track player.id) {
+      <li class="p-3 rounded-xl bg-surface-base border transition-all"
+          [class.border-neon-amber]="player.isActive"
+          [class.border-surface-overlay]="!player.isActive">
+
+        <!-- Name row -->
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2 min-w-0">
+            @if (player.isActive) {
+              <div class="w-1.5 h-1.5 rounded-full bg-neon-amber shrink-0"></div>
+            }
+            <span class="font-semibold text-sm text-zinc-200 truncate">{{ player.name }}</span>
+          </div>
+
+          <div class="flex items-center gap-3 shrink-0 ml-2">
+            @if (player.ac) {
+              <span class="text-[10px] text-zinc-500">
+                CA <span class="text-zinc-300 font-bold">{{ player.ac }}</span>
+              </span>
+            }
+            <!-- HP number — large and colored -->
+            <span
+              class="text-lg font-black tabular-nums leading-none"
+              [class]="hpNumClass(player.currentHp, player.maxHp)"
+              [class.drop-shadow]="isCritical(player.currentHp, player.maxHp)"
+            >{{ player.currentHp }}</span>
+            <span class="text-xs text-zinc-600">/ {{ player.maxHp }}</span>
+          </div>
+        </div>
+
+        <!-- HP bar -->
+        <div class="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all duration-500"
+            [class]="hpBarClass(player.currentHp, player.maxHp)"
+            [style.width]="hpPct(player.currentHp, player.maxHp) + '%'"
+          ></div>
+        </div>
+
+        <!-- Conditions -->
+        @if (player.conditions?.length) {
+          <div class="flex flex-wrap gap-1 mt-2">
+            @for (cond of player.conditions; track cond) {
+              <span class="text-[9px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                {{ cond }}
+              </span>
+            }
+          </div>
+        }
+      </li>
+    }
+  </ul>
+</div>

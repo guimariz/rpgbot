@@ -822,23 +822,28 @@
   padding: 13px;
 }
 
-.campaign-card-main {
+.campaign-card-info {
   display: grid;
   gap: 4px;
   min-width: 0;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  text-align: left;
+}
+
+.campaign-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .campaign-card:hover {
   border-color: #5d1a25;
 }
 
-.campaign-card small,
-.campaign-card-main small {
+.campaign-card-actions button {
+  min-width: 0;
+}
+
+.campaign-card small {
   color: #756b60;
 }
 
@@ -1468,8 +1473,9 @@ h3 {
 .session-create-row {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
-  gap: 10px;
+  gap: 20px;
   align-items: end;
+  margin-bottom: 8px;
 }
 
 .board-size-row,

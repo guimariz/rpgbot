@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardComponent } from './dashboard/dashboard.component';
+import { DashboardModernComponent } from './dashboard-modern/dashboard-modern.component';
 import { ApiClientService } from './core/api-client.service';
 import { Campaign, CampaignSettings, CampaignSystem, CombatInitiative, CombatSession, createDefaultCampaignSettings, DamageTypeConfig, EncounterConfig, LobbyEntity, LobbyParticipant, LobbyRevealMode, LobbySettings, LobbyState, LoreLinkConfig, LoreNodeConfig, RoundCounterConfig, SessionConfig, SessionRun, TemplateConfig, TemplateFieldConfig, TemplateFieldType } from './models/campaign.model';
 import { CombatLogEntry, Entity, EntitySessionState, EntityType, HpPreview, VisibilityMode } from './models/entity.model';
@@ -36,7 +37,7 @@ const loreNodeHeight = 168;
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, DashboardComponent],
+  imports: [CommonModule, DashboardComponent, DashboardModernComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -59,7 +60,14 @@ export class AppComponent {
   readonly authMessage = signal('');
   readonly campaignMessage = signal('');
   readonly workspaceView = signal<WorkspaceView>('dashboard');
-  readonly showNewDashboard = signal(false);
+  readonly dashboardDesign = signal<'original' | 'v1' | 'v2'>('original');
+
+  cycleDesign(): void {
+    const next: Record<string, 'original' | 'v1' | 'v2'> = {
+      original: 'v1', v1: 'v2', v2: 'original',
+    };
+    this.dashboardDesign.set(next[this.dashboardDesign()]);
+  }
   readonly libraryFilter = signal<LibraryFilter>('all');
 
   readonly loginEmail = signal('');

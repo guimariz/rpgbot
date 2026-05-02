@@ -1,0 +1,29 @@
+<!-- Master Shield — Modern Clean Dark Dashboard -->
+<div class="grid grid-cols-12 grid-rows-2 gap-3 h-screen p-3 bg-surface-base">
+
+  <!-- ① HP Jogadores — col 1-4, row 1 -->
+  <div class="col-span-4 row-span-1 min-h-0">
+    <app-m-player-hp-panel [players]="players" />
+  </div>
+
+  <!-- ② Iniciativa (dominante) — col 5-8, rows 1-2 -->
+  <div class="col-span-4 row-span-2 min-h-0">
+    <app-m-initiative-panel [entries]="initiatives" [round]="round" />
+  </div>
+
+  <!-- ③ Notas Rápidas — col 9-12, row 1 -->
+  <div class="col-span-4 row-span-1 min-h-0">
+    <app-m-notes-panel />
+  </div>
+
+  <!-- ④ HP Inimigos — col 1-4, row 2 -->
+  <div class="col-span-4 row-span-1 min-h-0">
+    <app-m-enemy-hp-panel [enemies]="enemies" />
+  </div>
+
+  <!-- ⑤ Rolador de Dados — col 9-12, row 2 -->
+  <div class="col-span-4 row-span-1 min-h-0">
+    <app-m-dice-panel />
+  </div>
+
+</div>
